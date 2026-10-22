@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ControllerAudioSwitcher.Core\ControllerAudioSwitcher.Core.csproj" />
+    <ProjectReference Include="..\ControllerAudioSwitcher.Audio\ControllerAudioSwitcher.Audio.csproj" />
+    <ProjectReference Include="..\ControllerAudioSwitcher.Transport\ControllerAudioSwitcher.Transport.csproj" />
+    <ProjectReference Include="..\ControllerAudioSwitcher.Controller\ControllerAudioSwitcher.Controller.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+</Project>

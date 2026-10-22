@@ -1,0 +1,37 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+publish/
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test and coverage results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Logs and temporary output
+*.log
+err.txt
+out.txt
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# User-specific settings and secrets
+.env
+.env.*
+!.env.example
+secrets.json
