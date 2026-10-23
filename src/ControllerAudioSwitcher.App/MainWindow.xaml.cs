@@ -1,9 +1,12 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ControllerAudioSwitcher.Audio;
 using ControllerAudioSwitcher.Controller;
@@ -20,6 +23,12 @@ namespace ControllerAudioSwitcher.App;
 
 public partial class MainWindow : Window
 {
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
     private readonly IDiagnosticService _diagnosticService;
     private readonly ISettingsService _settingsService;
     private readonly IControllerDiscoveryService _discoveryService;
@@ -31,6 +40,7 @@ public partial class MainWindow : Window
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly DispatcherTimer _telemetryTimer;
     private bool _isExplicitExit;
+    private bool _isOperationPending;
 
     public MainWindow()
     {
@@ -61,20 +71,31 @@ public partial class MainWindow : Window
         _notifyIcon = new Forms.NotifyIcon
         {
             Icon = System.Drawing.SystemIcons.Application,
-            Text = "DualShock 4 Bluetooth Audio Streamer",
+            Text = "DS4-SoundLink",
             Visible = true
         };
         _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
 
         var contextMenu = new Forms.ContextMenuStrip();
         contextMenu.Items.Add("Open Dashboard", null, (s, e) => RestoreFromTray());
-        contextMenu.Items.Add("Start Streaming", null, async (s, e) => await _streamingController.StartStreamingAsync());
-        contextMenu.Items.Add("Stop Streaming", null, async (s, e) => await _streamingController.StopStreamingAsync());
+        contextMenu.Items.Add("Start Streaming", null, async (s, e) =>
+        {
+            try { await _streamingController.StartStreamingAsync(); }
+            catch (Exception ex) { _diagnosticService.Error($"Tray start streaming error: {ex.Message}"); }
+        });
+        contextMenu.Items.Add("Stop Streaming", null, async (s, e) =>
+        {
+            try { await _streamingController.StopStreamingAsync(); }
+            catch (Exception ex) { _diagnosticService.Error($"Tray stop streaming error: {ex.Message}"); }
+        });
         contextMenu.Items.Add("-");
         contextMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
         _notifyIcon.ContextMenuStrip = contextMenu;
 
-        // Telemetry update timer
+        // Apply application icon if present
+        ApplyApplicationIcon();
+
+        // Telemetry update timer (for diagnostic & stats)
         _telemetryTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(250)
@@ -86,14 +107,339 @@ public partial class MainWindow : Window
         LoadSettingsIntoUi();
         RefreshAudioDevices();
 
-        _diagnosticService.Info("DualShock 4 Audio Streamer started. Initialized Windows WASAPI capture and HID transport.");
+        _diagnosticService.Info("DS4-SoundLink started. Initialized Windows WASAPI capture and HID transport.");
 
         // Start discovery for connected controllers
         _discoveryService.StartDiscovery();
 
         var initialController = _discoveryService.GetConnectedControllers().FirstOrDefault();
         UpdateControllerDetails(initialController);
+        UpdateUiFromStatus(_streamingController.Status);
     }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        EnableImmersiveDarkMode();
+    }
+
+    private void EnableImmersiveDarkMode()
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int darkMode = 1;
+            if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int)) != 0)
+            {
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref darkMode, sizeof(int));
+            }
+        }
+        catch { }
+    }
+
+    private void ApplyApplicationIcon()
+    {
+        try
+        {
+            Stream? iconStream = null;
+
+            // 1. Try embedded assembly resource (WPF pack URI)
+            try
+            {
+                var resourceUri = new Uri("pack://application:,,,/app.ico", UriKind.Absolute);
+                var streamInfo = System.Windows.Application.GetResourceStream(resourceUri);
+                if (streamInfo != null)
+                {
+                    iconStream = streamInfo.Stream;
+                }
+            }
+            catch { }
+
+            // 2. If not found in assembly resources, try local filesystem paths
+            if (iconStream == null)
+            {
+                string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+                if (!File.Exists(iconPath))
+                {
+                    string devPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "app.ico");
+                    if (File.Exists(devPath))
+                    {
+                        iconPath = Path.GetFullPath(devPath);
+                    }
+                }
+
+                if (File.Exists(iconPath))
+                {
+                    iconStream = File.OpenRead(iconPath);
+                }
+            }
+
+            if (iconStream != null)
+            {
+                using (iconStream)
+                using (var ms = new MemoryStream())
+                {
+                    iconStream.CopyTo(ms);
+                    ms.Position = 0;
+
+                    var decoder = BitmapDecoder.Create(ms, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+                    if (decoder.Frames.Count > 0)
+                    {
+                        var bestFrame = decoder.Frames.OrderByDescending(f => f.PixelWidth).FirstOrDefault() ?? decoder.Frames[0];
+                        Icon = bestFrame;
+                        ImgAppHeaderIcon.Source = bestFrame;
+                        ImgAppHeaderIcon.Visibility = Visibility.Visible;
+                        HeaderVectorIcon.Visibility = Visibility.Collapsed;
+                    }
+
+                    ms.Position = 0;
+                    _notifyIcon.Icon = new System.Drawing.Icon(ms);
+                    return;
+                }
+            }
+
+            // 3. Fallback: Extract the icon embedded in the running PE executable itself
+            string? procPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrEmpty(procPath) && File.Exists(procPath))
+            {
+                using var exeIcon = System.Drawing.Icon.ExtractAssociatedIcon(procPath);
+                if (exeIcon != null)
+                {
+                    _notifyIcon.Icon = (System.Drawing.Icon)exeIcon.Clone();
+
+                    using var bmp = exeIcon.ToBitmap();
+                    using var ms = new MemoryStream();
+                    bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                    ms.Position = 0;
+
+                    var bmpImage = new BitmapImage();
+                    bmpImage.BeginInit();
+                    bmpImage.CacheOption = BitmapCacheOption.OnLoad;
+                    bmpImage.StreamSource = ms;
+                    bmpImage.EndInit();
+                    bmpImage.Freeze();
+
+                    Icon = bmpImage;
+                    ImgAppHeaderIcon.Source = bmpImage;
+                    ImgAppHeaderIcon.Visibility = Visibility.Visible;
+                    HeaderVectorIcon.Visibility = Visibility.Collapsed;
+                    return;
+                }
+            }
+
+            _notifyIcon.Icon = System.Drawing.SystemIcons.Application;
+            ImgAppHeaderIcon.Visibility = Visibility.Collapsed;
+            HeaderVectorIcon.Visibility = Visibility.Visible;
+        }
+        catch
+        {
+            _notifyIcon.Icon = System.Drawing.SystemIcons.Application;
+            ImgAppHeaderIcon.Visibility = Visibility.Collapsed;
+            HeaderVectorIcon.Visibility = Visibility.Visible;
+        }
+    }
+
+    // ==========================================
+    // IN-WINDOW PAGE NAVIGATION
+    // ==========================================
+
+    private void OnNavSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        ViewMain.Visibility = Visibility.Collapsed;
+        ViewLogs.Visibility = Visibility.Collapsed;
+        ViewSettings.Visibility = Visibility.Visible;
+    }
+
+    private void OnNavLogsClicked(object sender, RoutedEventArgs e)
+    {
+        ViewMain.Visibility = Visibility.Collapsed;
+        ViewSettings.Visibility = Visibility.Collapsed;
+        ViewLogs.Visibility = Visibility.Visible;
+        TxtLogConsole.ScrollToEnd();
+    }
+
+    private void OnBackToMainClicked(object sender, RoutedEventArgs e)
+    {
+        ViewSettings.Visibility = Visibility.Collapsed;
+        ViewLogs.Visibility = Visibility.Collapsed;
+        ViewMain.Visibility = Visibility.Visible;
+    }
+
+    // ==========================================
+    // CONTROLLER & AUDIO STATUS UPDATES
+    // ==========================================
+
+    private void UpdateControllerDetails(ControllerInfo? controller)
+    {
+        if (controller == null)
+        {
+            // Main Dashboard state
+            DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(113, 113, 122)); // Neutral gray
+            TxtControllerStatus.Text = "No Controller Connected";
+            TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+            TxtControllerSubtext.Text = "Pair controller using Share + PS";
+            TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+            BtnStartStreaming.IsEnabled = false;
+
+            // Settings page state
+            TxtSettingsControllerName.Text = "No DualShock 4 connected";
+            TxtSettingsInterface.Text = "Disconnected";
+            TxtSettingsCapability.Text = "Not Detected";
+            TxtSettingsDevicePath.Text = "-";
+            return;
+        }
+
+        // Settings details
+        TxtSettingsControllerName.Text = controller.DisplayName;
+        TxtSettingsDevicePath.Text = controller.DevicePath;
+
+        if (controller.ConnectionType == ControllerConnectionType.Bluetooth)
+        {
+            TxtSettingsInterface.Text = "Bluetooth (Wireless)";
+
+            if (controller.IsCompatible)
+            {
+                // [GREEN DOT] DualShock 4 Connected
+                DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Vibrant emerald
+                TxtControllerStatus.Text = $"{controller.DisplayName} Connected";
+                TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
+                TxtControllerSubtext.Text = "Bluetooth • Ready for wireless audio";
+                TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+
+                TxtSettingsCapability.Text = "Compatible (3.5 mm Jack Supported)";
+                BtnStartStreaming.IsEnabled = !_streamingController.IsStreaming && !_isOperationPending;
+            }
+            else
+            {
+                DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
+                TxtControllerStatus.Text = $"{controller.DisplayName} (Unsupported)";
+                TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+                TxtControllerSubtext.Text = "Hardware configuration unsupported";
+                TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+
+                TxtSettingsCapability.Text = "Unsupported configuration";
+                BtnStartStreaming.IsEnabled = false;
+            }
+        }
+        else if (controller.ConnectionType == ControllerConnectionType.Usb)
+        {
+            DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
+            TxtControllerStatus.Text = $"{controller.DisplayName} (USB)";
+            TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+            TxtControllerSubtext.Text = "Connect via Bluetooth for wireless audio";
+            TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+
+            TxtSettingsInterface.Text = "USB (Wired)";
+            TxtSettingsCapability.Text = "USB Connected (Wireless transport inactive)";
+            BtnStartStreaming.IsEnabled = false;
+        }
+    }
+
+    private void UpdateUiFromStatus(StreamingStatus status)
+    {
+        switch (status.State)
+        {
+            case StreamingState.Streaming:
+                DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Green
+                TxtAudioStatus.Text = "Audio Transmission: Active";
+                TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
+                BtnStartStreaming.IsEnabled = false;
+                BtnStopStreaming.IsEnabled = !_isOperationPending;
+                break;
+
+            case StreamingState.Starting:
+                DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(59, 130, 246)); // Blue
+                TxtAudioStatus.Text = "Audio Transmission: Starting...";
+                TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(96, 165, 250));
+                BtnStartStreaming.IsEnabled = false;
+                BtnStopStreaming.IsEnabled = false;
+                break;
+
+            case StreamingState.Failed:
+                DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(239, 68, 68)); // Red
+                TxtAudioStatus.Text = "Audio Transmission: Error";
+                TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113));
+                BtnStartStreaming.IsEnabled = status.ActiveController?.IsCompatible == true && !_isOperationPending;
+                BtnStopStreaming.IsEnabled = false;
+                break;
+
+            case StreamingState.ConnectedBluetoothReady:
+                DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(113, 113, 122)); // Neutral
+                TxtAudioStatus.Text = "Audio Transmission: Stopped";
+                TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                BtnStartStreaming.IsEnabled = !_isOperationPending;
+                BtnStopStreaming.IsEnabled = false;
+                break;
+
+            case StreamingState.ConnectedUsbOnly:
+            case StreamingState.Disconnected:
+            default:
+                DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(113, 113, 122)); // Neutral
+                TxtAudioStatus.Text = "Audio Transmission: Stopped";
+                TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                BtnStartStreaming.IsEnabled = false;
+                BtnStopStreaming.IsEnabled = false;
+                break;
+        }
+    }
+
+    // ==========================================
+    // STREAMING OPERATION CONTROLS
+    // ==========================================
+
+    private async void OnStartStreamingClicked(object sender, RoutedEventArgs e)
+    {
+        if (_isOperationPending || _streamingController.IsStreaming) return;
+        _isOperationPending = true;
+        BtnStartStreaming.IsEnabled = false;
+        BtnStopStreaming.IsEnabled = false;
+
+        try
+        {
+            _diagnosticService.Info("User requested Start Streaming.");
+            bool started = await _streamingController.StartStreamingAsync();
+            if (!started)
+            {
+                _diagnosticService.Warn("StartStreamingAsync returned false.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _diagnosticService.Error($"Error starting audio stream: {ex.Message}", ex);
+        }
+        finally
+        {
+            _isOperationPending = false;
+            UpdateUiFromStatus(_streamingController.Status);
+        }
+    }
+
+    private async void OnStopStreamingClicked(object sender, RoutedEventArgs e)
+    {
+        if (_isOperationPending || !_streamingController.IsStreaming) return;
+        _isOperationPending = true;
+        BtnStartStreaming.IsEnabled = false;
+        BtnStopStreaming.IsEnabled = false;
+
+        try
+        {
+            _diagnosticService.Info("User requested Stop Streaming.");
+            await _streamingController.StopStreamingAsync();
+        }
+        catch (Exception ex)
+        {
+            _diagnosticService.Error($"Error stopping audio stream: {ex.Message}", ex);
+        }
+        finally
+        {
+            _isOperationPending = false;
+            UpdateUiFromStatus(_streamingController.Status);
+        }
+    }
+
+    // ==========================================
+    // SETTINGS PAGE CONTROLS & LOGIC
+    // ==========================================
 
     private void LoadSettingsIntoUi()
     {
@@ -147,128 +493,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateControllerDetails(ControllerInfo? controller)
+    private void OnAudioDeviceSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (controller == null)
+        if (CmbAudioDevices.SelectedItem is ComboBoxItem item && item.Tag is string deviceId)
         {
-            TxtControllerName.Text = "No DualShock 4 connected";
-            TxtControllerName.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
-            TxtConnectionType.Text = "Disconnected";
-            TxtInterfaceHint.Text = "";
-            TxtAudioCapability.Text = "Not Detected";
-            TxtAudioCapability.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
-            TxtDevicePath.Text = "-";
-            BtnStartStreaming.IsEnabled = false;
-            UpdateStatusBadge("Disconnected", Color.FromRgb(39, 39, 42), Color.FromRgb(113, 113, 122));
-            return;
-        }
-
-        TxtControllerName.Text = controller.DisplayName;
-        TxtDevicePath.Text = controller.DevicePath;
-
-        if (controller.ConnectionType == ControllerConnectionType.Bluetooth)
-        {
-            TxtConnectionType.Text = "Bluetooth (Wireless)";
-            TxtConnectionType.Foreground = new SolidColorBrush(Color.FromRgb(59, 130, 246));
-            TxtInterfaceHint.Text = "✓ Ready for 0x17 Audio HID streaming";
-
-            if (controller.IsCompatible)
-            {
-                TxtAudioCapability.Text = "Compatible (3.5 mm Jack Supported)";
-                TxtAudioCapability.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                BtnStartStreaming.IsEnabled = !_streamingController.IsStreaming;
-                UpdateStatusBadge("Bluetooth Ready", Color.FromRgb(29, 78, 216), Color.FromRgb(96, 165, 250));
-            }
-            else
-            {
-                TxtAudioCapability.Text = "Unsupported configuration";
-                TxtAudioCapability.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                BtnStartStreaming.IsEnabled = false;
-                UpdateStatusBadge("Unsupported", Color.FromRgb(180, 83, 9), Color.FromRgb(251, 191, 36));
-            }
-        }
-        else if (controller.ConnectionType == ControllerConnectionType.Usb)
-        {
-            TxtConnectionType.Text = "USB (Wired)";
-            TxtConnectionType.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-            TxtInterfaceHint.Text = "⚠️ Connect via Bluetooth for wireless audio";
-            TxtAudioCapability.Text = "USB Connected (Wireless transport inactive)";
-            TxtAudioCapability.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-            BtnStartStreaming.IsEnabled = false;
-            UpdateStatusBadge("USB Connected", Color.FromRgb(120, 53, 15), Color.FromRgb(245, 158, 11));
+            _settingsService.CurrentSettings.SelectedAudioDeviceId = deviceId;
+            _settingsService.Save();
+            _diagnosticService.Info($"Selected audio playback device: {item.Content}");
         }
     }
 
-    private void UpdateUiFromStatus(StreamingStatus status)
+    private void OnRefreshDevicesClicked(object sender, RoutedEventArgs e)
     {
-        TxtStatusMessage.Text = status.Message;
-
-        switch (status.State)
-        {
-            case StreamingState.Streaming:
-                BtnStartStreaming.IsEnabled = false;
-                BtnStopStreaming.IsEnabled = true;
-                UpdateStatusBadge("Streaming Active", Color.FromRgb(6, 78, 59), Color.FromRgb(16, 185, 129));
-                break;
-
-            case StreamingState.Starting:
-                BtnStartStreaming.IsEnabled = false;
-                BtnStopStreaming.IsEnabled = false;
-                UpdateStatusBadge("Starting...", Color.FromRgb(30, 58, 138), Color.FromRgb(59, 130, 246));
-                break;
-
-            case StreamingState.Failed:
-                BtnStartStreaming.IsEnabled = status.ActiveController?.IsCompatible == true;
-                BtnStopStreaming.IsEnabled = false;
-                UpdateStatusBadge("Failed", Color.FromRgb(127, 29, 29), Color.FromRgb(239, 68, 68));
-                break;
-
-            case StreamingState.ConnectedBluetoothReady:
-                BtnStartStreaming.IsEnabled = true;
-                BtnStopStreaming.IsEnabled = false;
-                UpdateStatusBadge("Bluetooth Ready", Color.FromRgb(29, 78, 216), Color.FromRgb(96, 165, 250));
-                break;
-
-            case StreamingState.ConnectedUsbOnly:
-                BtnStartStreaming.IsEnabled = false;
-                BtnStopStreaming.IsEnabled = false;
-                UpdateStatusBadge("USB Connected", Color.FromRgb(120, 53, 15), Color.FromRgb(245, 158, 11));
-                break;
-
-            case StreamingState.Disconnected:
-            default:
-                BtnStartStreaming.IsEnabled = false;
-                BtnStopStreaming.IsEnabled = false;
-                UpdateStatusBadge("Disconnected", Color.FromRgb(39, 39, 42), Color.FromRgb(113, 113, 122));
-                break;
-        }
+        RefreshAudioDevices();
     }
 
-    private void UpdateStatusBadge(string label, Color bg, Color dot)
+    private void OnVolumeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        StatusBadgeText.Text = label;
-        StatusBadgeBorder.Background = new SolidColorBrush(bg);
-        StatusIndicatorDot.Fill = new SolidColorBrush(dot);
+        byte volume = (byte)e.NewValue;
+        UpdateVolumeLabel(volume);
+        _streamingController?.SetVolume(volume);
     }
 
-    private void OnTelemetryTick(object? sender, EventArgs e)
+    private void UpdateVolumeLabel(byte volume)
     {
-        var status = _streamingController.Status;
-        if (status.State == StreamingState.Streaming)
-        {
-            long kbSent = status.BytesSent / 1024;
-            TxtPacketsSent.Text = $"{status.PacketsSent:N0} packets ({kbSent:N0} KB)";
-            TxtEstimatedLatency.Text = $"{status.EstimatedLatencyMs:F0} ms (Buffer: {status.BufferLevelFrames} frames)";
-            PbBufferLevel.Value = Math.Min(96, status.BufferLevelFrames);
-            TxtUnderruns.Text = $"{status.UnderrunCount:N0}";
-        }
-        else
-        {
-            TxtEstimatedLatency.Text = "Idle";
-            PbBufferLevel.Value = 0;
-        }
-
-        UpdateSpeakerMuteButton(_captureService.IsEndpointMuted);
+        int percent = (int)Math.Round((volume / 127.0) * 100);
+        TxtVolumeValue.Text = $"{percent}% ({volume}/127)";
     }
 
     private void OnToggleSpeakerMuteClicked(object sender, RoutedEventArgs e)
@@ -309,50 +559,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnStartStreamingClicked(object sender, RoutedEventArgs e)
-    {
-        _diagnosticService.Info("User requested Start Streaming.");
-        bool started = await _streamingController.StartStreamingAsync();
-        if (!started)
-        {
-            _diagnosticService.Warn("StartStreamingAsync returned false.");
-        }
-    }
-
-    private async void OnStopStreamingClicked(object sender, RoutedEventArgs e)
-    {
-        _diagnosticService.Info("User requested Stop Streaming.");
-        await _streamingController.StopStreamingAsync();
-    }
-
-    private void OnVolumeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        byte volume = (byte)e.NewValue;
-        UpdateVolumeLabel(volume);
-        _streamingController?.SetVolume(volume);
-    }
-
-    private void UpdateVolumeLabel(byte volume)
-    {
-        int percent = (int)Math.Round((volume / 127.0) * 100);
-        TxtVolumeValue.Text = $"{percent}% ({volume}/127)";
-    }
-
-    private void OnAudioDeviceSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CmbAudioDevices.SelectedItem is ComboBoxItem item && item.Tag is string deviceId)
-        {
-            _settingsService.CurrentSettings.SelectedAudioDeviceId = deviceId;
-            _settingsService.Save();
-            _diagnosticService.Info($"Selected audio playback device: {item.Content}");
-        }
-    }
-
-    private void OnRefreshDevicesClicked(object sender, RoutedEventArgs e)
-    {
-        RefreshAudioDevices();
-    }
-
     private void OnSettingsOptionChanged(object sender, RoutedEventArgs e)
     {
         if (_settingsService == null) return;
@@ -385,17 +591,44 @@ public partial class MainWindow : Window
         }
     }
 
+    // ==========================================
+    // LOGS & TELEMETRY CONTROLS
+    // ==========================================
+
+    private void OnTelemetryTick(object? sender, EventArgs e)
+    {
+        var status = _streamingController.Status;
+        if (status.State == StreamingState.Streaming)
+        {
+            long kbSent = status.BytesSent / 1024;
+            TxtPacketsSent.Text = $"{status.PacketsSent:N0} ({kbSent:N0} KB)";
+            TxtEstimatedLatency.Text = $"{status.EstimatedLatencyMs:F0} ms";
+            PbBufferLevel.Value = Math.Min(96, status.BufferLevelFrames);
+            TxtUnderruns.Text = $"{status.UnderrunCount:N0}";
+        }
+        else
+        {
+            TxtEstimatedLatency.Text = "Idle";
+            PbBufferLevel.Value = 0;
+        }
+
+        UpdateSpeakerMuteButton(_captureService.IsEndpointMuted);
+    }
+
     private void OnLogMessageReceived(object? sender, LogEntry msg)
     {
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             string line = $"[{msg.Timestamp:HH:mm:ss}] [{msg.Level.ToString().ToUpperInvariant()}] {msg.Message}{Environment.NewLine}";
-            TxtLogConsole.AppendText(line);
-            if (TxtLogConsole.Text.Length > 20000)
+            if (TxtLogConsole.Text.Length > 25000)
             {
-                TxtLogConsole.Text = TxtLogConsole.Text[^10000..];
+                TxtLogConsole.Text = TxtLogConsole.Text[^12000..];
             }
-            TxtLogConsole.ScrollToEnd();
+            TxtLogConsole.AppendText(line);
+            if (ViewLogs.Visibility == Visibility.Visible)
+            {
+                TxtLogConsole.ScrollToEnd();
+            }
         });
     }
 
@@ -418,10 +651,14 @@ public partial class MainWindow : Window
         _diagnosticService.Clear();
     }
 
+    // ==========================================
+    // WINDOW & SYSTEM TRAY LIFECYCLE
+    // ==========================================
+
     private void OnMinimizeToTrayClicked(object sender, RoutedEventArgs e)
     {
         Hide();
-        _notifyIcon.ShowBalloonTip(1500, "DualShock 4 Audio Streamer", 
+        _notifyIcon.ShowBalloonTip(1500, "DS4-SoundLink", 
             "Minimized to system tray. Streaming will continue in the background.", 
             Forms.ToolTipIcon.Info);
     }

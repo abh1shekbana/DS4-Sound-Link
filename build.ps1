@@ -17,6 +17,7 @@ Write-Host "============================================================" -Foreg
 $DotnetExe = "dotnet"
 if (Test-Path "$env:USERPROFILE\.dotnet\dotnet.exe") {
     $DotnetExe = "$env:USERPROFILE\.dotnet\dotnet.exe"
+    $env:DOTNET_ROOT = "$env:USERPROFILE\.dotnet"
     $env:PATH = "$env:USERPROFILE\.dotnet;" + $env:PATH
 }
 
@@ -76,11 +77,19 @@ if ($Standalone) {
         Write-Error "Standalone publish failed with exit code $LASTEXITCODE."
         exit $LASTEXITCODE
     }
-    if (Test-Path "$StandaloneDir\ControllerAudioSwitcher.App.exe") {
+    if (Test-Path "$StandaloneDir\DS4SoundLink.exe") {
+        Copy-Item "$StandaloneDir\DS4SoundLink.exe" "$StandaloneDir\ControllerAudioSwitcher.exe" -Force
+    }
+    elseif (Test-Path "$StandaloneDir\ControllerAudioSwitcher.App.exe") {
+        Copy-Item "$StandaloneDir\ControllerAudioSwitcher.App.exe" "$StandaloneDir\DS4SoundLink.exe" -Force
         Copy-Item "$StandaloneDir\ControllerAudioSwitcher.App.exe" "$StandaloneDir\ControllerAudioSwitcher.exe" -Force
     }
+    if (Test-Path "$PSScriptRoot\src\ControllerAudioSwitcher.App\app.ico") {
+        Copy-Item "$PSScriptRoot\src\ControllerAudioSwitcher.App\app.ico" "$StandaloneDir\app.ico" -Force
+    }
     Write-Host "[OK] Standalone Single-File Executable built successfully to: $StandaloneDir" -ForegroundColor Green
-    Write-Host "Standalone Binary: $StandaloneDir\ControllerAudioSwitcher.exe" -ForegroundColor Cyan
+    Write-Host "Standalone Binary: $StandaloneDir\DS4SoundLink.exe" -ForegroundColor Cyan
+    Write-Host "Also available as: $StandaloneDir\ControllerAudioSwitcher.exe" -ForegroundColor Cyan
 }
 
 Write-Host "All operations completed successfully." -ForegroundColor Green

@@ -14,6 +14,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>DS4SoundLink</AssemblyName>
+    <Product>DS4-SoundLink</Product>
+    <Title>DS4-SoundLink</Title>
+    <Description>DualShock 4 Bluetooth Audio Streamer for Windows 11</Description>
+    <Company>DS4SoundLink</Company>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="app.ico" Condition="Exists('app.ico')" />
+    <None Update="app.ico" Condition="Exists('app.ico')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
 </Project>

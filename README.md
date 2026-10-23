@@ -28,8 +28,17 @@ When connected via USB, the Sony DualShock 4 exposes a standard USB Audio Class 
 
 ## Building and Testing
 
-### Quick Build with PowerShell
-To build the solution, execute automated tests, and produce a published release:
+### Quick Standalone Build (Zero Dependencies / Anyone Can Use)
+To build a **self-contained standalone single-file executable** with embedded icon (users do NOT need .NET installed):
+```powershell
+.\build.ps1 -Standalone
+```
+Or double-click `build-standalone.bat`.
+
+The resulting standalone executable will be located at:
+`bin\standalone\DS4SoundLink.exe` (also available as `bin\standalone\ControllerAudioSwitcher.exe`).
+
+### Framework-Dependent Build (Smaller footprint, requires .NET 8)
 ```powershell
 .\build.ps1 -Publish
 ```
@@ -42,8 +51,12 @@ dotnet build ControllerAudioSwitcher.sln -c Release
 # Run automated tests
 dotnet test tests/ControllerAudioSwitcher.Core.Tests/ -c Release
 
-# Publish self-contained executable
-dotnet publish src/ControllerAudioSwitcher.App/ -c Release -r win-x64 --self-contained false -o bin/publish
+# Publish self-contained single-file executable with embedded icon
+dotnet publish src/ControllerAudioSwitcher.App/ControllerAudioSwitcher.App.csproj `
+    -c Release -r win-x64 --self-contained true `
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true -p:DebugType=None `
+    -o bin/standalone
 ```
 
 ---

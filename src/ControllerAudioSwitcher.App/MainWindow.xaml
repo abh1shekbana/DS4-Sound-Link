@@ -4,381 +4,626 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="DualShock 4 Bluetooth Audio Streamer" 
-        Height="720" Width="960" 
-        MinHeight="600" MinWidth="800"
+        Title="DS4-SoundLink" 
+        Icon="app.ico"
+        Height="380" Width="450" 
+        MinHeight="360" MinWidth="420"
         Background="#0F1117"
         Foreground="#E2E8F0"
+        FontFamily="Segoe UI Variable, Segoe UI, sans-serif"
+        TextOptions.TextFormattingMode="Display"
+        RenderOptions.ClearTypeHint="Enabled"
         WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
-        <!-- Modern ScrollBar Style -->
-        <Style TargetType="ScrollBar">
-            <Setter Property="Background" Value="#1A1D27"/>
-            <Setter Property="Width" Value="8"/>
+        <!-- Reusable Vector Geometries -->
+        <Geometry x:Key="GeoHeadphones">M12,2 C6.48,2 2,6.48 2,12 L2,19 C2,20.66 3.34,22 5,22 L8,22 L8,14 L4,14 L4,12 C4,7.59 7.59,4 12,4 C16.41,4 20,7.59 20,12 L20,14 L16,14 L16,22 L19,22 C20.66,22 22,20.66 22,19 L22,12 C22,6.48 17.52,2 12,2 Z</Geometry>
+        <Geometry x:Key="GeoSettings">M19.14,12.94 C19.18,12.64 19.2,12.33 19.2,12 C19.2,11.67 19.18,11.36 19.13,11.06 L21.16,9.48 C21.34,9.34 21.39,9.08 21.28,8.87 L19.36,5.55 C19.24,5.33 18.99,5.26 18.77,5.33 L16.38,6.29 C15.88,5.91 15.35,5.59 14.76,5.35 L14.4,2.81 C14.36,2.57 14.16,2.4 13.92,2.4 L10.08,2.4 C9.84,2.4 9.65,2.57 9.61,2.81 L9.25,5.35 C8.66,5.59 8.13,5.91 7.63,6.29 L5.24,5.33 C5.02,5.25 4.77,5.33 4.65,5.55 L2.73,8.87 C2.62,9.08 2.66,9.34 2.85,9.48 L4.88,11.06 C4.83,11.36 4.79,11.69 4.79,12 C4.79,12.31 4.83,12.64 4.88,12.94 L2.85,14.52 C2.67,14.66 2.62,14.92 2.73,15.13 L4.65,18.45 C4.77,18.67 5.02,18.74 5.24,18.67 L7.63,17.71 C8.13,18.09 8.66,18.41 9.25,18.65 L9.61,21.19 C9.65,21.43 9.84,21.6 10.08,21.6 L13.92,21.6 C14.16,21.6 14.35,21.43 14.39,21.19 L14.75,18.65 C15.34,18.41 15.87,18.09 16.37,17.71 L18.76,18.67 C18.98,18.75 19.23,18.67 19.35,18.45 L21.27,15.13 C21.38,14.92 21.34,14.66 21.15,14.52 L19.14,12.94 Z M12,15.6 C10.02,15.6 8.4,13.98 8.4,12 C8.4,10.02 10.02,8.4 12,8.4 C13.98,8.4 15.6,10.02 15.6,12 C15.6,13.98 13.98,15.6 12,15.6 Z</Geometry>
+        <Geometry x:Key="GeoLogs">M19,3 L5,3 C3.9,3 3,3.9 3,5 L3,19 C3,20.1 3.9,21 5,21 L19,21 C20.1,21 21,20.1 21,19 L21,5 C21,3.9 20.1,3 19,3 Z M7,7 L11,7 L11,9 L7,9 L7,7 Z M17,17 L7,17 L7,15 L17,15 L17,17 Z M17,13 L7,13 L7,11 L17,11 L17,13 Z</Geometry>
+        <Geometry x:Key="GeoBack">M20,11 L7.83,11 L13.42,5.41 L12,4 L4,12 L12,20 L13.41,18.59 L7.83,13 L20,13 L20,11 Z</Geometry>
+        <Geometry x:Key="GeoPlay">M8,5 L19,12 L8,19 Z</Geometry>
+        <Geometry x:Key="GeoStop">M6,6 L18,6 L18,18 L6,18 Z</Geometry>
+        <Geometry x:Key="GeoTray">M19,13 L5,13 L5,11 L19,11 L19,13 Z</Geometry>
+        <Geometry x:Key="GeoRefresh">M17.65,6.35 C16.2,4.9 14.21,4 12,4 C7.58,4 4.01,7.58 4.01,12 C4.01,16.42 7.58,20 12,20 C15.73,20 18.84,17.45 19.73,14 L17.65,14 C16.83,16.33 14.61,18 12,18 C8.69,18 6,15.31 6,12 C6,8.69 8.69,6 12,6 C13.66,6 15.14,6.69 16.22,7.78 L13,11 L20,11 L20,4 L17.65,6.35 Z</Geometry>
+        <Geometry x:Key="GeoCopy">M16,1 L4,1 C2.9,1 2,1.9 2,3 L2,17 L4,17 L4,3 L16,3 L16,1 Z M19,5 L8,5 C6.9,5 6,5.9 6,7 L6,21 C6,22.1 6.9,23 8,23 L19,23 C20.1,23 21,22.1 21,21 L21,7 C21,5.9 20.1,5 19,5 Z M19,21 L8,21 L8,7 L19,7 L19,21 Z</Geometry>
+        <Geometry x:Key="GeoClear">M6,19 C6,20.1 6.9,21 8,21 L16,21 C17.1,21 18,20.1 18,19 L18,7 L6,7 L6,19 Z M19,4 L15.5,4 L14.5,3 L9.5,3 L8.5,4 L5,4 L5,6 L19,6 L19,4 Z</Geometry>
+        <Geometry x:Key="GeoExternal">M19,19 L5,19 L5,5 L12,5 L12,3 L5,3 C3.89,3 3,3.9 3,5 L3,19 C3,20.1 3.89,21 5,21 L19,21 C20.1,21 21,20.1 21,19 L19,19 Z M14,3 L14,5 L17.59,5 L7.76,14.83 L9.17,16.24 L19,6.41 L19,10 L21,10 L21,3 L14,3 Z</Geometry>
+
+        <!-- Primary Accent Button Style -->
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#2563EB"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="6" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" 
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1D4ED8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1E40AF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#1C2230"/>
+                                <Setter Property="Foreground" Value="#64748B"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary Button Style -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#161922"/>
+            <Setter Property="BorderBrush" Value="#2A2F40"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#E2E8F0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="6" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" 
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1E2330"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#3B4256"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#12151D"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.5"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Stop Button Style -->
+        <Style x:Key="StopButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#22161B"/>
+            <Setter Property="BorderBrush" Value="#452028"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#F87171"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="6" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" 
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#341E28"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#6B2A3B"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1C1217"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#181B24"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#232735"/>
+                                <Setter Property="Foreground" Value="#64748B"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Navigation Button Style -->
+        <Style x:Key="NavButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#151821"/>
+            <Setter Property="BorderBrush" Value="#232735"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#94A3B8"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="6" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" 
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1E2330"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#2D3344"/>
+                                <Setter Property="Foreground" Value="#F1F5F9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#12151D"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Clean Dark CheckBox Style -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#CBD5E1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border x:Name="box" Width="16" Height="16" CornerRadius="4" 
+                                    Background="#141720" BorderBrush="#2D3344" BorderThickness="1" 
+                                    Margin="0,0,8,0" VerticalAlignment="Center">
+                                <Path x:Name="check" Data="M3,8 L6,11 L13,4" Stroke="#FFFFFF" StrokeThickness="1.8" 
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,1,0,0"/>
+                            </Border>
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="box" Property="Background" Value="#2563EB"/>
+                                <Setter TargetName="box" Property="BorderBrush" Value="#2563EB"/>
+                                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="box" Property="BorderBrush" Value="#3B82F6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Fluent Dark Slider Style -->
+        <Style TargetType="Slider">
+            <Setter Property="Stylus.IsPressAndHoldEnabled" Value="false"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#2563EB"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border Background="#2563EB" Height="4" CornerRadius="2,0,0,2"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border Background="#232736" Height="4" CornerRadius="0,2,2,0"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate>
+                                                <Ellipse Width="14" Height="14" Fill="#3B82F6" Stroke="#1D4ED8" StrokeThickness="1" Cursor="Hand"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modern Dark ScrollBar Style -->
+        <Style TargetType="{x:Type ScrollBar}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Width" Value="6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="true">
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate>
+                                                <Border Background="#2D3344" CornerRadius="3"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Card Container Style -->
         <Style x:Key="CardPanel" TargetType="Border">
-            <Setter Property="Background" Value="#161922"/>
-            <Setter Property="BorderBrush" Value="#232736"/>
+            <Setter Property="Background" Value="#151821"/>
+            <Setter Property="BorderBrush" Value="#232735"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="16"/>
-            <Setter Property="Margin" Value="0,0,0,14"/>
-        </Style>
-
-        <!-- Section Header Style -->
-        <Style x:Key="SectionTitle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#94A3B8"/>
-            <Setter Property="Margin" Value="0,0,0,12"/>
-        </Style>
-
-        <!-- Metric Label Style -->
-        <Style x:Key="MetricLabel" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#64748B"/>
-        </Style>
-
-        <!-- Metric Value Style -->
-        <Style x:Key="MetricValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
     </Window.Resources>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- Top App Header -->
-            <RowDefinition Height="*"/>    <!-- Main Dashboard -->
-            <RowDefinition Height="Auto"/> <!-- Status Bar -->
-        </Grid.RowDefinitions>
+        <!-- ======================================================== -->
+        <!-- VIEW 1: COMPACT MAIN DASHBOARD (DEFAULT VIEW)            -->
+        <!-- ======================================================== -->
+        <Grid x:Name="ViewMain" Visibility="Visible" Margin="16,14,16,14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Header -->
+                <RowDefinition Height="*"/>    <!-- Center Dashboard Content -->
+                <RowDefinition Height="Auto"/> <!-- Bottom Navigation -->
+            </Grid.RowDefinitions>
 
-        <!-- TOP APP HEADER -->
-        <Border Grid.Row="0" Background="#131620" BorderBrush="#1E2330" BorderThickness="0,0,0,1" Padding="20,14">
-            <Grid>
+            <!-- A. APPLICATION HEADER -->
+            <Grid Grid.Row="0" Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="#2563EB" CornerRadius="8" Width="36" Height="36" Margin="0,0,14,0">
-                        <TextBlock Text="🎧" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Icon container (supports external ICO or vector fallback) -->
+                    <Border Width="24" Height="24" CornerRadius="5" Background="#1E2330" Margin="0,0,10,0">
+                        <Grid>
+                            <Image x:Name="ImgAppHeaderIcon" Width="18" Height="18" Visibility="Collapsed" 
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Path x:Name="HeaderVectorIcon" Data="{StaticResource GeoHeadphones}" Fill="#3B82F6" 
+                                  Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
                     </Border>
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="DualShock 4 Bluetooth Audio Streamer" FontSize="16" FontWeight="Bold" Foreground="#FFFFFF"/>
-                            <Border Background="#1E293B" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="v1.0.0 (Windows 11)" FontSize="10" FontWeight="SemiBold" Foreground="#94A3B8"/>
-                            </Border>
-                        </StackPanel>
-                        <TextBlock Text="Stream PC audio to controller 3.5 mm headphone jack over wireless Bluetooth" 
-                                   FontSize="11" Foreground="#64748B" Margin="0,2,0,0"/>
-                    </StackPanel>
+                    <TextBlock Text="DS4-SoundLink" FontSize="15" FontWeight="SemiBold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- Status Badge -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border x:Name="StatusBadgeBorder" Background="#27272A" CornerRadius="14" Padding="12,5" Margin="0,0,10,0">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse x:Name="StatusIndicatorDot" Width="8" Height="8" Fill="#71717A" Margin="0,0,8,0"/>
-                            <TextBlock x:Name="StatusBadgeText" Text="Disconnected" FontSize="12" FontWeight="SemiBold" Foreground="#E4E4E7"/>
-                        </StackPanel>
-                    </Border>
-                    <Button x:Name="BtnMinimizeToTray" Content="Minimize to Tray" Click="OnMinimizeToTrayClicked" 
-                            Background="#1E2330" Foreground="#94A3B8" BorderBrush="#2D3344" BorderThickness="1" 
-                            Padding="10,5" FontSize="11" Cursor="Hand">
-                        <Button.Resources>
-                            <Style TargetType="Border">
-                                <Setter Property="CornerRadius" Value="6"/>
-                            </Style>
-                        </Button.Resources>
-                    </Button>
-                </StackPanel>
+                <Button x:Name="BtnMinimizeToTray" Grid.Column="1" Click="OnMinimizeToTrayClicked" 
+                        ToolTip="Minimize to System Tray" Style="{StaticResource NavButtonStyle}" Padding="6,4">
+                    <Path Data="{StaticResource GeoTray}" Fill="#94A3B8" Width="11" Height="11" Stretch="Uniform"/>
+                </Button>
             </Grid>
-        </Border>
 
-        <!-- MAIN DASHBOARD CONTENT -->
-        <Grid Grid.Row="1" Margin="20,16,20,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.1*"/>
-                <ColumnDefinition Width="0.9*"/>
-            </Grid.ColumnDefinitions>
+            <!-- B, C, D: MAIN DASHBOARD CENTER CONTENT -->
+            <StackPanel Grid.Row="1" VerticalAlignment="Center">
+                <!-- B. CONTROLLER CONNECTION STATUS CARD -->
+                <Border Style="{StaticResource CardPanel}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Ellipse x:Name="DotControllerStatus" Grid.Column="0" Width="10" Height="10" Fill="#71717A" 
+                                 Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtControllerStatus" Text="No Controller Connected" 
+                                       FontSize="13" FontWeight="SemiBold" Foreground="#94A3B8"/>
+                            <TextBlock x:Name="TxtControllerSubtext" Text="Pair controller using Share + PS" 
+                                       FontSize="11" Foreground="#64748B" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
-            <!-- LEFT COLUMN: Controller & Streaming Controls -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,12,0">
-                <StackPanel>
-                    <!-- CARD 1: CONTROLLER STATUS -->
+                <!-- C. AUDIO TRANSMISSION STATUS CARD -->
+                <Border Style="{StaticResource CardPanel}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Ellipse x:Name="DotAudioStatus" Grid.Column="0" Width="8" Height="8" Fill="#71717A" 
+                                 Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="TxtAudioStatus" Grid.Column="1" Text="Audio Transmission: Stopped" 
+                                   FontSize="12" FontWeight="SemiBold" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <!-- D. PRIMARY START AND STOP CONTROLS -->
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button x:Name="BtnStartStreaming" Grid.Column="0" Click="OnStartStreamingClicked"
+                            Style="{StaticResource PrimaryButtonStyle}" Height="38" Margin="0,0,4,0" IsEnabled="False">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource GeoPlay}" Fill="#FFFFFF" Width="10" Height="10" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Start Streaming" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnStopStreaming" Grid.Column="1" Click="OnStopStreamingClicked"
+                            Style="{StaticResource StopButtonStyle}" Height="38" Margin="4,0,0,0" IsEnabled="False">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource GeoStop}" Fill="#F87171" Width="10" Height="10" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Stop Streaming" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </StackPanel>
+
+            <!-- E. COMPACT NAVIGATION AREA FOR SECONDARY PAGES -->
+            <Border Grid.Row="2" BorderBrush="#1E2330" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button x:Name="NavBtnSettings" Grid.Column="0" Click="OnNavSettingsClicked" 
+                            Style="{StaticResource NavButtonStyle}" Margin="0,0,4,0" Height="30">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource GeoSettings}" Fill="#94A3B8" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Settings" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="NavBtnLogs" Grid.Column="1" Click="OnNavLogsClicked" 
+                            Style="{StaticResource NavButtonStyle}" Margin="4,0,0,0" Height="30">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource GeoLogs}" Fill="#94A3B8" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Logs" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ======================================================== -->
+        <!-- VIEW 2: SETTINGS PAGE (IN-WINDOW NAVIGATION)              -->
+        <!-- ======================================================== -->
+        <Grid x:Name="ViewSettings" Visibility="Collapsed" Margin="16,14,16,14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Page Header with Back Button -->
+                <RowDefinition Height="*"/>    <!-- Scrollable Settings -->
+            </Grid.RowDefinitions>
+
+            <!-- Header with Back Button -->
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BtnBackFromSettings" Grid.Column="0" Click="OnBackToMainClicked" 
+                        Style="{StaticResource NavButtonStyle}" Height="28" Padding="8,4">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource GeoBack}" Fill="#94A3B8" Width="11" Height="11" Stretch="Uniform" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Back" FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <TextBlock Grid.Column="1" Text="Settings" FontSize="14" FontWeight="SemiBold" 
+                           Foreground="#F8FAFC" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </Grid>
+
+            <!-- Scrollable Settings Content -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,6,0">
+                    <!-- SECTION 1: AUDIO OUTPUT SOURCE -->
                     <Border Style="{StaticResource CardPanel}">
                         <StackPanel>
-                            <TextBlock Text="CONTROLLER HARDWARE" Style="{StaticResource SectionTitle}"/>
-                            
+                            <TextBlock Text="AUDIO PLAYBACK SOURCE" FontSize="11" FontWeight="SemiBold" Foreground="#64748B" Margin="0,0,0,8"/>
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="140"/>
                                     <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Detected Controller:" Style="{StaticResource MetricLabel}"/>
-                                <TextBlock x:Name="TxtControllerName" Grid.Column="1" Text="No DualShock 4 connected" Style="{StaticResource MetricValue}"/>
+                                <ComboBox x:Name="CmbAudioDevices" Grid.Column="0" Height="30" Background="#11131A" Foreground="#E2E8F0"
+                                          BorderBrush="#2A2F40" SelectionChanged="OnAudioDeviceSelectionChanged"/>
+                                <Button Grid.Column="1" Click="OnRefreshDevicesClicked" Width="30" Height="30" Margin="6,0,0,0"
+                                        Style="{StaticResource SecondaryButtonStyle}" ToolTip="Refresh Audio Devices" Padding="0">
+                                    <Path Data="{StaticResource GeoRefresh}" Fill="#94A3B8" Width="11" Height="11" Stretch="Uniform"/>
+                                </Button>
                             </Grid>
-
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="140"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Connection Interface:" Style="{StaticResource MetricLabel}"/>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <TextBlock x:Name="TxtConnectionType" Text="None" Style="{StaticResource MetricValue}"/>
-                                    <TextBlock x:Name="TxtInterfaceHint" Text="" FontSize="11" Foreground="#94A3B8" Margin="8,0,0,0"/>
+                            <Button x:Name="BtnOpenSoundSettings" Click="OnOpenSoundSettingsClicked" 
+                                    Style="{StaticResource SecondaryButtonStyle}" Height="28" HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource GeoExternal}" Fill="#94A3B8" Width="10" Height="10" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Windows Sound Settings" FontSize="11" VerticalAlignment="Center"/>
                                 </StackPanel>
-                            </Grid>
-
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="140"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Audio Capability:" Style="{StaticResource MetricLabel}"/>
-                                <TextBlock x:Name="TxtAudioCapability" Grid.Column="1" Text="Unknown" Style="{StaticResource MetricValue}"/>
-                            </Grid>
-
-                            <Grid Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="140"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Hardware ID / Path:" Style="{StaticResource MetricLabel}"/>
-                                <TextBlock x:Name="TxtDevicePath" Grid.Column="1" Text="-" FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
-                            </Grid>
+                            </Button>
                         </StackPanel>
                     </Border>
 
-                    <!-- CARD 2: AUDIO STREAMING CONTROLS -->
+                    <!-- SECTION 2: VOLUME & HEADPHONE ISOLATION -->
                     <Border Style="{StaticResource CardPanel}">
                         <StackPanel>
-                            <TextBlock Text="STREAMING CONTROLS" Style="{StaticResource SectionTitle}"/>
-
-                            <!-- Big Action Buttons -->
-                            <Grid Margin="0,4,0,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Button x:Name="BtnStartStreaming" Grid.Column="0" Content="▶  Start Streaming" Click="OnStartStreamingClicked"
-                                        Background="#2563EB" Foreground="#FFFFFF" FontWeight="Bold" FontSize="13" 
-                                        BorderThickness="0" Height="42" Margin="0,0,6,0" Cursor="Hand" IsEnabled="False">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="8"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-
-                                <Button x:Name="BtnStopStreaming" Grid.Column="1" Content="⏹  Stop Streaming" Click="OnStopStreamingClicked"
-                                        Background="#1E2330" Foreground="#F87171" FontWeight="SemiBold" FontSize="13" 
-                                        BorderBrush="#374151" BorderThickness="1" Height="42" Margin="6,0,0,0" Cursor="Hand" IsEnabled="False">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="8"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </Grid>
-
-                            <!-- Audio Output Source Selection -->
-                            <TextBlock Text="Windows Playback Audio Source:" Style="{StaticResource MetricLabel}" Margin="0,0,0,6"/>
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <ComboBox x:Name="CmbAudioDevices" Grid.Column="0" Height="34" Background="#11131A" Foreground="#E2E8F0"
-                                          BorderBrush="#232736" SelectionChanged="OnAudioDeviceSelectionChanged"/>
-                                <Button Grid.Column="1" Content="↻" Click="OnRefreshDevicesClicked" Width="34" Height="34" 
-                                        Margin="8,0,0,0" Background="#1E2330" Foreground="#94A3B8" BorderBrush="#2D3344" Cursor="Hand" ToolTip="Refresh Audio Devices">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="6"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </Grid>
-
-                            <!-- Audio Isolation Action Buttons -->
-                            <Grid Margin="0,0,0,14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Button x:Name="BtnToggleSpeakerMute" Grid.Column="0" Content="🔇 Mute PC Speakers" Click="OnToggleSpeakerMuteClicked"
-                                        Height="30" Margin="0,0,4,0" Background="#1E2330" Foreground="#F59E0B" BorderBrush="#374151" BorderThickness="1" 
-                                        FontSize="11" FontWeight="SemiBold" Cursor="Hand">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="6"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="BtnOpenSoundSettings" Grid.Column="1" Content="⚙ Windows Sound Settings" Click="OnOpenSoundSettingsClicked"
-                                        Height="30" Margin="4,0,0,0" Background="#1E2330" Foreground="#94A3B8" BorderBrush="#374151" BorderThickness="1" 
-                                        FontSize="11" Cursor="Hand" ToolTip="Open Windows 11 sound output device settings">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="6"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </Grid>
-
-                            <!-- Volume Slider -->
+                            <TextBlock Text="VOLUME &amp; HEADPHONE ISOLATION" FontSize="11" FontWeight="SemiBold" Foreground="#64748B" Margin="0,0,0,8"/>
                             <Grid Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="3.5 mm Headphone Jack Volume:" Style="{StaticResource MetricLabel}"/>
-                                <TextBlock x:Name="TxtVolumeValue" Grid.Column="1" Text="86% (110/127)" Style="{StaticResource MetricValue}"/>
+                                <TextBlock Text="3.5 mm Jack Volume:" FontSize="12" Foreground="#CBD5E1"/>
+                                <TextBlock x:Name="TxtVolumeValue" Grid.Column="1" Text="86% (110/127)" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC"/>
                             </Grid>
                             <Slider x:Name="SliderVolume" Minimum="0" Maximum="127" Value="110" TickFrequency="1" 
-                                    IsSnapToTickEnabled="True" Margin="0,4,0,16" ValueChanged="OnVolumeChanged"/>
+                                    IsSnapToTickEnabled="True" Margin="0,4,0,12" ValueChanged="OnVolumeChanged"/>
+                            <CheckBox x:Name="ChkMuteSpeakers" Content="Mute PC speakers during streaming (Headphone isolation)" 
+                                      Margin="0,0,0,8" IsChecked="True" Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
+                            <Button x:Name="BtnToggleSpeakerMute" Click="OnToggleSpeakerMuteClicked" 
+                                    Content="🔇 Mute PC Speakers" Style="{StaticResource SecondaryButtonStyle}" 
+                                    Height="28" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
 
-                            <!-- Options Checkboxes -->
-                            <CheckBox x:Name="ChkMuteSpeakers" Content="Mute PC Speakers during streaming (Headphone Isolation)" 
-                                      Foreground="#CBD5E1" FontSize="12" Margin="0,0,0,8" IsChecked="True"
-                                      Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
-                            <CheckBox x:Name="ChkAutoStart" Content="Automatically stream when compatible DualShock 4 connects" 
-                                      Foreground="#CBD5E1" FontSize="12" Margin="0,0,0,8" Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
-                            <CheckBox x:Name="ChkDiagnosticCaptureOnly" Content="Diagnostic Capture Test Mode (WASAPI loopback test without transmission)" 
-                                      Foreground="#94A3B8" FontSize="11" Margin="0,0,0,8" Checked="OnDiagnosticCaptureModeChanged" Unchecked="OnDiagnosticCaptureModeChanged"/>
+                    <!-- SECTION 3: APPLICATION & AUTOMATION OPTIONS -->
+                    <Border Style="{StaticResource CardPanel}">
+                        <StackPanel>
+                            <TextBlock Text="PREFERENCES" FontSize="11" FontWeight="SemiBold" Foreground="#64748B" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="ChkAutoStart" Content="Automatically stream when compatible controller connects" 
+                                      Margin="0,0,0,8" Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
                             <CheckBox x:Name="ChkMinimizeToTray" Content="Minimize to System Tray when window is closed" 
-                                      Foreground="#CBD5E1" FontSize="12" Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
+                                      Margin="0,0,0,8" Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
+                            <CheckBox x:Name="ChkDiagnosticCaptureOnly" Content="Diagnostic capture test mode (WASAPI without transmission)" 
+                                      Checked="OnDiagnosticCaptureModeChanged" Unchecked="OnDiagnosticCaptureModeChanged"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- SECTION 4: CONTROLLER HARDWARE DETAILS -->
+                    <Border Style="{StaticResource CardPanel}">
+                        <StackPanel>
+                            <TextBlock Text="CONTROLLER HARDWARE DETAILS" FontSize="11" FontWeight="SemiBold" Foreground="#64748B" Margin="0,0,0,8"/>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Device:" FontSize="11" Foreground="#64748B"/>
+                                <TextBlock x:Name="TxtSettingsControllerName" Grid.Column="1" Text="No DualShock 4 connected" FontSize="11" Foreground="#CBD5E1"/>
+                            </Grid>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Interface:" FontSize="11" Foreground="#64748B"/>
+                                <TextBlock x:Name="TxtSettingsInterface" Grid.Column="1" Text="Disconnected" FontSize="11" Foreground="#CBD5E1"/>
+                            </Grid>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Capability:" FontSize="11" Foreground="#64748B"/>
+                                <TextBlock x:Name="TxtSettingsCapability" Grid.Column="1" Text="Not Detected" FontSize="11" Foreground="#CBD5E1"/>
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Device Path:" FontSize="11" Foreground="#64748B"/>
+                                <TextBlock x:Name="TxtSettingsDevicePath" Grid.Column="1" Text="-" FontSize="10" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>
-
-            <!-- RIGHT COLUMN: Telemetry & Logs -->
-            <Grid Grid.Column="1" Margin="12,0,0,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <!-- CARD 3: STREAM TELEMETRY -->
-                <Border Grid.Row="0" Style="{StaticResource CardPanel}">
-                    <StackPanel>
-                        <TextBlock Text="AUDIO PIPELINE &amp; METRICS" Style="{StaticResource SectionTitle}"/>
-
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Codec Pipeline:" Style="{StaticResource MetricLabel}"/>
-                            <TextBlock Text="SBC Stereo (32 kHz, Bitpool 48)" Style="{StaticResource MetricValue}"/>
-                        </Grid>
-
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Report Cadence:" Style="{StaticResource MetricLabel}"/>
-                            <TextBlock Text="HID 0x17 (4 frames = 16 ms)" Style="{StaticResource MetricValue}"/>
-                        </Grid>
-
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Packets Streamed:" Style="{StaticResource MetricLabel}"/>
-                            <TextBlock x:Name="TxtPacketsSent" Text="0 packets (0 KB)" Style="{StaticResource MetricValue}"/>
-                        </Grid>
-
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Estimated Latency:" Style="{StaticResource MetricLabel}"/>
-                            <TextBlock x:Name="TxtEstimatedLatency" Text="Idle" Style="{StaticResource MetricValue}"/>
-                        </Grid>
-
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Buffer Health:" Style="{StaticResource MetricLabel}"/>
-                            <ProgressBar x:Name="PbBufferLevel" Grid.Column="1" Height="8" Minimum="0" Maximum="64" Value="0" 
-                                         Background="#11131A" Foreground="#3B82F6" BorderThickness="0" VerticalAlignment="Center"/>
-                        </Grid>
-
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Buffer Underruns:" Style="{StaticResource MetricLabel}"/>
-                            <TextBlock x:Name="TxtUnderruns" Text="0" Style="{StaticResource MetricValue}"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- CARD 4: DIAGNOSTIC LOGS -->
-                <Border Grid.Row="1" Style="{StaticResource CardPanel}" Margin="0,0,0,0">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="DIAGNOSTIC LOGS" Style="{StaticResource SectionTitle}" Margin="0"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="Copy" Click="OnCopyLogsClicked" Background="#1E2330" Foreground="#94A3B8" 
-                                        BorderBrush="#2D3344" BorderThickness="1" Padding="8,2" FontSize="10" Margin="0,0,6,0" Cursor="Hand"/>
-                                <Button Content="Clear" Click="OnClearLogsClicked" Background="#1E2330" Foreground="#94A3B8" 
-                                        BorderBrush="#2D3344" BorderThickness="1" Padding="8,2" FontSize="10" Cursor="Hand"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <TextBox x:Name="TxtLogConsole" Grid.Row="1" IsReadOnly="True" VerticalScrollBarVisibility="Auto" 
-                                 HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="11" 
-                                 Background="#0D0F15" Foreground="#A0AEC0" BorderBrush="#1E2330" BorderThickness="1" 
-                                 Padding="8" TextWrapping="NoWrap"/>
-
-                        <TextBlock Grid.Row="2" Text="* Logs include connection lifecycle, HID transport, and audio capture diagnostics." 
-                                   FontSize="10" Foreground="#475569" Margin="0,6,0,0"/>
-                    </Grid>
-                </Border>
-            </Grid>
         </Grid>
 
-        <!-- STATUS BAR -->
-        <Border Grid.Row="2" Background="#0B0D12" BorderBrush="#1E2330" BorderThickness="0,1,0,0" Padding="20,8">
-            <Grid>
+        <!-- ======================================================== -->
+        <!-- VIEW 3: LOGS & DIAGNOSTICS PAGE (IN-WINDOW NAVIGATION)    -->
+        <!-- ======================================================== -->
+        <Grid x:Name="ViewLogs" Visibility="Collapsed" Margin="16,14,16,14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Page Header with Back & Action Buttons -->
+                <RowDefinition Height="Auto"/> <!-- Preserved Telemetry Metrics Bar -->
+                <RowDefinition Height="*"/>    <!-- Diagnostic Log Console -->
+            </Grid.RowDefinitions>
+
+            <!-- Header with Back and Copy/Clear Buttons -->
+            <Grid Grid.Row="0" Margin="0,0,0,10">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="TxtStatusMessage" Text="Application ready. Waiting for DualShock 4 connection..." 
-                           FontSize="11" Foreground="#94A3B8" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Column="1" Text="Bluetooth HID 0x17 Overlapped Transport" 
-                           FontSize="10" Foreground="#475569"/>
+
+                <Button x:Name="BtnBackFromLogs" Grid.Column="0" Click="OnBackToMainClicked" 
+                        Style="{StaticResource NavButtonStyle}" Height="28" Padding="8,4">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource GeoBack}" Fill="#94A3B8" Width="11" Height="11" Stretch="Uniform" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Back" FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <TextBlock Grid.Column="1" Text="Diagnostic Logs" FontSize="14" FontWeight="SemiBold" 
+                           Foreground="#F8FAFC" VerticalAlignment="Center" Margin="10,0,0,0"/>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Click="OnCopyLogsClicked" Style="{StaticResource SecondaryButtonStyle}" Height="26" Padding="8,2" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource GeoCopy}" Fill="#94A3B8" Width="10" Height="10" Stretch="Uniform" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Copy" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnClearLogsClicked" Style="{StaticResource SecondaryButtonStyle}" Height="26" Padding="8,2">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource GeoClear}" Fill="#94A3B8" Width="10" Height="10" Stretch="Uniform" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Clear" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Grid>
-        </Border>
+
+            <!-- Compact Telemetry Status Strip (Preserved technical metrics) -->
+            <Border Grid.Row="1" Background="#151821" BorderBrush="#232735" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.2*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="1.2*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Packets" FontSize="10" Foreground="#64748B"/>
+                        <TextBlock x:Name="TxtPacketsSent" Text="0 packets" FontSize="11" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Latency" FontSize="10" Foreground="#64748B"/>
+                        <TextBlock x:Name="TxtEstimatedLatency" Text="Idle" FontSize="11" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Underruns" FontSize="10" Foreground="#64748B"/>
+                        <TextBlock x:Name="TxtUnderruns" Text="0" FontSize="11" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3">
+                        <TextBlock Text="Buffer" FontSize="10" Foreground="#64748B"/>
+                        <ProgressBar x:Name="PbBufferLevel" Height="5" Minimum="0" Maximum="96" Value="0" 
+                                     Background="#11131A" Foreground="#3B82F6" BorderThickness="0" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Diagnostic Log Console -->
+            <TextBox x:Name="TxtLogConsole" Grid.Row="2" IsReadOnly="True" 
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" 
+                     FontFamily="Consolas" FontSize="11" Background="#0A0C10" Foreground="#CBD5E1" 
+                     BorderBrush="#1E2330" BorderThickness="1" Padding="8" TextWrapping="NoWrap"/>
+        </Grid>
     </Grid>
 </Window>
