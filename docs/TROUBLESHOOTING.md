@@ -80,3 +80,67 @@ To verify that PC audio capture is working independently of the Bluetooth contro
 1. Check the **Diagnostic Capture Test Mode** box in the dashboard.
 2. Play audio on your PC.
 3. The diagnostic log will report active loopback capture. If an error is reported (e.g. `AUDCLNT_E_DEVICE_INVALIDATED`), select another audio endpoint from the dropdown.
+
+---
+
+## 7. Audible Hiss, Static Noise, or Background Buzzing
+
+### Cause Analysis:
+1. **Software Resampling Glitches (Fixed in v2.1)**:
+   - *Cause*: In previous releases, when converting 48 kHz WASAPI frames to 32 kHz DualShock SBC frames, sub-sample phase accumulation was reset at each buffer boundary. This produced a microscopic discontinuity every 10 ms, manifesting as an audible 100 Hz harmonic buzz/hiss.
+   - *Fix*: DS4SoundLink v2.1 features a stateful fractional carry interpolation engine that guarantees phase continuity across arbitrary buffer sizes.
+2. **Controller Analog Hardware Noise Floor (Physical Hardware Limit)**:
+   - *Cause*: The DualShock 4 controller's integrated DAC and headphone amplifier have a relatively high baseline noise floor (SNR ~75 dB). If you use ultra-sensitive, low-impedance in-ear monitors (IEMs), you will naturally hear faint background analog thermal hiss regardless of whether audio is streaming.
+   - *Mitigation*: Use standard 32-ohm headphones or higher impedance headsets. Software cannot eliminate the physical thermal noise floor of the controller's analog circuitry.
+3. **Bluetooth Packet Jitter & Dropped Frames**:
+   - Check the **Telemetry** section in DS4SoundLink. If **Buffer Underruns** or **Dropped Frames** are incrementing, intermittent audio packet starvation is causing audible clicks and micro-dropouts that sound like static. Follow the Bluetooth interference steps in Section 3.
+
+---
+
+## 8. Low Volume Output & Preventing Cracking on Highs
+
+### Causes:
+1. **Low Volume on High-Impedance Headsets**: The DualShock 4 headphone amplifier operates from a low-voltage battery rail and lacks high-power output stages. High-impedance headphones (e.g., 80 ohm to 250 ohm) sound quieter than when plugged into a powered PC sound card.
+2. **Audio Cracking on Max Volume / High Peaks**: When the volume is maxed out and high-frequency transients (cymbals, snares, explosions) reach 0 dBFS (32767 PCM), the controller's internal hardware SBC synthesis filter overshoots beyond 32767 due to filter ringing and Gibbs phenomenon. Because the controller DAC uses 16-bit signed arithmetic, this overshoot wraps around or hard-clips, producing sharp acoustic cracking.
+
+### Solutions (Automated in v2.1):
+1. **Automatic Loudness AGC**: DS4SoundLink v2.1 automatically applies a clean +2 dB boost to quiet and moderate passages so dialogue and game audio are punchy and loud without requiring manual software gain adjustment.
+2. **Safe True-Peak Ceiling (-1.41 dBFS)**: Peaks are strictly constrained to `0.85f` (27850 PCM), ensuring the controller's internal SBC decoder reconstruction filter never exceeds 32767 even during sharp high-frequency attacks.
+3. **Smooth Hyperbolic Tangent Limiting**: Transients above `0.60f` (-4.4 dBFS) are compressed smoothly with zero sudden corners, eliminating harsh digital clipping clicks.
+4. **Adjust Controller Hardware Volume**: Set the **Volume** slider in DS4SoundLink to 85–95% (raw register value 108–120) for optimal analog amplifier linearity.
+
+---
+
+## 9. Output Routing: Internal Speaker vs. AUX / Headphone Jack
+
+### Supported Behavior:
+DS4SoundLink v2.1 provides exclusive output routing:
+- **AUX / Headphone Jack**: Directs 32 kHz stereo audio exclusively to headphones plugged into the 3.5 mm jack, while commanding the controller hardware to mute the internal speaker register.
+- **Internal Speaker**: Directs 32 kHz audio exclusively to the controller's internal speaker, automatically folding down left and right channels to mono (`(L + R) * 0.5`) to prevent acoustic phase cancellation, while muting the headphone DAC.
+
+### Live Switching:
+- You can switch between Internal Speaker and AUX Headphone Jack live while audio is streaming.
+- The stream does not restart, preserving Bluetooth connection stability and SBC encoder sync.
+
+---
+
+## 10. Application Responsiveness During Stop Streaming
+
+In DS4SoundLink v2.1:
+- Clicking **⏹ Stop Streaming** immediately transitions the application to the `Stopping` state.
+- Worker threads and audio buffers are terminated asynchronously without blocking the WPF UI thread, preventing deadlocks or application freezes.
+- Once stopped, you can immediately restart streaming without restarting the application or unplugging the controller.
+
+---
+
+## 11. Battery Level Indicator & Telemetry
+
+DS4SoundLink v2.1 queries hardware battery telemetry directly from the DualShock 4:
+- **Bluetooth Connection**: Parsed from Report `0x11` status bytes (offset 32 and 33).
+- **USB Connection**: Parsed from Report `0x01` status bytes (offset 30 and 31).
+- **Indicator States**:
+  - **Green (50–100%)**: Good battery charge.
+  - **Yellow (21–50%)**: Moderate battery charge.
+  - **Red (0–20%)**: Low / critical battery charge; plug in USB cable to charge.
+  - **Cyan + ⚡ Icon**: Controller is plugged into a power source and actively charging.
+  - **`--%`**: Controller connected, reading telemetry payload.

@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using ControllerAudioSwitcher.Controller.Native;
 using ControllerAudioSwitcher.Core.Interfaces;
 using ControllerAudioSwitcher.Core.Models;
+using ControllerAudioSwitcher.Core.Protocol;
 using Microsoft.Win32.SafeHandles;
 
 namespace ControllerAudioSwitcher.Controller;
@@ -79,6 +80,7 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
 
         List<ControllerInfo> connected = new();
         List<ControllerInfo> disconnected = new();
+        List<ControllerInfo> batteryUpdated = new();
 
         lock (_syncRoot)
         {
@@ -90,6 +92,17 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
                 {
                     _connectedControllers[kvp.Key] = kvp.Value;
                     connected.Add(kvp.Value);
+                }
+                else
+                {
+                    var existing = _connectedControllers[kvp.Key];
+                    if (kvp.Value.BatteryPercent >= 0 &&
+                        (existing.BatteryPercent != kvp.Value.BatteryPercent || existing.IsCharging != kvp.Value.IsCharging))
+                    {
+                        existing.BatteryPercent = kvp.Value.BatteryPercent;
+                        existing.IsCharging = kvp.Value.IsCharging;
+                        batteryUpdated.Add(existing);
+                    }
                 }
             }
 
@@ -104,7 +117,12 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
 
         foreach (var c in connected)
         {
-            _diagnosticService?.Info($"Controller attached: {c.DisplayName} ({c.ConnectionType}) [Compatible: {c.IsCompatible}]");
+            _diagnosticService?.Info($"Controller attached: {c.DisplayName} ({c.ConnectionType}) [Compatible: {c.IsCompatible}, Battery: {(c.BatteryPercent >= 0 ? c.BatteryPercent + "%" : "reading...")}]");
+            ControllerConnected?.Invoke(this, c);
+        }
+
+        foreach (var c in batteryUpdated)
+        {
             ControllerConnected?.Invoke(this, c);
         }
 
@@ -299,7 +317,12 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
                 OutputReportByteLength = outputReportLength
             };
 
-            _diagnosticService?.Debug($"Identified DualShock 4: {info.DisplayName} ({info.ConnectionType}), InputLen={inputReportLength}, OutputLen={outputReportLength}, Compatible={info.IsCompatible}");
+            if (info.IsCompatible)
+            {
+                ProbeBattery(info);
+            }
+
+            _diagnosticService?.Debug($"Identified DualShock 4: {info.DisplayName} ({info.ConnectionType}), InputLen={inputReportLength}, OutputLen={outputReportLength}, Compatible={info.IsCompatible}, Battery={info.BatteryPercent}%");
 
             return info;
         }
@@ -311,6 +334,97 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
         finally
         {
             handle?.Dispose();
+        }
+    }
+
+    private void ProbeBattery(ControllerInfo info)
+    {
+        if (string.IsNullOrEmpty(info.DevicePath))
+            return;
+
+        SafeFileHandle? readHandle = null;
+        IntPtr hEvent = IntPtr.Zero;
+        IntPtr overlappedPtr = IntPtr.Zero;
+
+        try
+        {
+            uint access = DeviceSetupNativeMethods.GenericRead;
+            uint share = DeviceSetupNativeMethods.FileShareRead | DeviceSetupNativeMethods.FileShareWrite | DeviceSetupNativeMethods.FileShareDelete;
+            uint flags = DeviceSetupNativeMethods.FileFlagOverlapped;
+
+            readHandle = DeviceSetupNativeMethods.CreateFile(
+                info.DevicePath,
+                access,
+                share,
+                IntPtr.Zero,
+                DeviceSetupNativeMethods.OpenExisting,
+                flags,
+                IntPtr.Zero);
+
+            if (readHandle.IsInvalid)
+                return;
+
+            hEvent = DeviceSetupNativeMethods.CreateEvent(IntPtr.Zero, true, false, null);
+            overlappedPtr = Marshal.AllocHGlobal(Marshal.SizeOf<DeviceSetupNativeMethods.OVERLAPPED>());
+            var ov = new DeviceSetupNativeMethods.OVERLAPPED { hEvent = hEvent };
+            Marshal.StructureToPtr(ov, overlappedPtr, false);
+
+            int bufLen = Math.Max(78, info.InputReportByteLength > 0 ? info.InputReportByteLength : 78);
+            byte[] buffer = new byte[bufLen];
+            GCHandle pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+
+            try
+            {
+                bool success = DeviceSetupNativeMethods.ReadFile(
+                    readHandle,
+                    pinned.AddrOfPinnedObject(),
+                    (uint)buffer.Length,
+                    out uint bytesRead,
+                    overlappedPtr);
+
+                if (!success)
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    const int errorIoPending = 997;
+                    if (err == errorIoPending)
+                    {
+                        uint wait = DeviceSetupNativeMethods.WaitForSingleObject(hEvent, 40);
+                        if (wait == DeviceSetupNativeMethods.WaitObject0)
+                        {
+                            success = DeviceSetupNativeMethods.GetOverlappedResult(readHandle, overlappedPtr, out bytesRead, false);
+                        }
+                        else
+                        {
+                            DeviceSetupNativeMethods.CancelIoEx(readHandle, overlappedPtr);
+                            success = false;
+                        }
+                    }
+                }
+
+                if (success && bytesRead > 0)
+                {
+                    if (DualShock4BatteryParser.TryParse(buffer.AsSpan(0, (int)bytesRead), out int batteryPercent, out bool isCharging))
+                    {
+                        info.BatteryPercent = batteryPercent;
+                        info.IsCharging = isCharging;
+                        _diagnosticService?.Debug($"Battery probe for {info.DisplayName}: {batteryPercent}% (Charging={isCharging})");
+                    }
+                }
+            }
+            finally
+            {
+                if (pinned.IsAllocated) pinned.Free();
+            }
+        }
+        catch
+        {
+            // Graceful fallback if reading battery is unsupported or device busy
+        }
+        finally
+        {
+            if (hEvent != IntPtr.Zero) DeviceSetupNativeMethods.CloseHandle(hEvent);
+            if (overlappedPtr != IntPtr.Zero) Marshal.FreeHGlobal(overlappedPtr);
+            readHandle?.Dispose();
         }
     }
 

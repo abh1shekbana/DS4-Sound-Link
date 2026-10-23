@@ -41,6 +41,15 @@ internal static class HidNativeMethods
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ReadFile(
+        SafeFileHandle hFile,
+        IntPtr lpBuffer,
+        uint nNumberOfBytesToRead,
+        out uint lpNumberOfBytesRead,
+        IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool WriteFile(
         SafeFileHandle hFile,
         IntPtr lpBuffer,

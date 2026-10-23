@@ -46,6 +46,7 @@ public class AudioStreamingControllerTests
 
         public void StopCapture() => IsCapturing = false;
         public void SetEndpointMute(bool mute, string? deviceId = null) => IsEndpointMuted = mute;
+        public void SetSoftwareGain(float gain) { }
         public void Dispose() => StopCapture();
     }
 
@@ -67,7 +68,17 @@ public class AudioStreamingControllerTests
         public bool IsOpen { get; private set; }
         public bool Armed { get; private set; }
         public byte LastVolume { get; private set; }
+        public byte LastHeadphoneVolume { get; private set; }
+        public byte LastSpeakerVolume { get; private set; }
+        public bool LastHeadsetMode { get; private set; } = true;
         public int FramesSentCount { get; private set; }
+        public event EventHandler<(int batteryPercent, bool isCharging)>? BatteryReportReceived
+        {
+            add { }
+            remove { }
+        }
+        public int CurrentBatteryPercent { get; set; } = 85;
+        public bool IsCharging { get; set; }
 
         public bool Open(ControllerInfo controller)
         {
@@ -85,6 +96,8 @@ public class AudioStreamingControllerTests
         {
             Armed = true;
             LastVolume = headphoneVolume;
+            LastHeadphoneVolume = headphoneVolume;
+            LastSpeakerVolume = speakerVolume;
             return true;
         }
 
@@ -97,6 +110,7 @@ public class AudioStreamingControllerTests
         public bool SendAudioFrames(ushort frameNumber, byte[][] frames, int frameCount, bool headsetMode = true)
         {
             FramesSentCount += frameCount;
+            LastHeadsetMode = headsetMode;
             return true;
         }
 
@@ -211,5 +225,153 @@ public class AudioStreamingControllerTests
         controller.SetVolume(95);
 
         Assert.AreEqual((byte)95, _settings.CurrentSettings.HeadphoneVolume);
+    }
+
+    [TestMethod]
+    public async Task StopStreamingAsync_ShutsDownCleanlyAndCanRestartRepeatedly()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var ds4 = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x09CC,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Sony DualShock 4"
+        };
+        _discovery.ActiveBtController = ds4;
+
+        // Perform multiple consecutive start/stop cycles
+        for (int cycle = 0; cycle < 3; cycle++)
+        {
+            bool started = await controller.StartStreamingAsync(ds4);
+            Assert.IsTrue(started, $"StartStreamingAsync failed on cycle {cycle}");
+            Assert.IsTrue(controller.IsStreaming);
+            Assert.IsTrue(_transport.IsOpen);
+
+            await controller.StopStreamingAsync();
+            Assert.IsFalse(controller.IsStreaming, $"StopStreamingAsync failed on cycle {cycle}");
+            Assert.IsFalse(_transport.IsOpen);
+            Assert.AreEqual(StreamingState.ConnectedBluetoothReady, controller.Status.State);
+        }
+    }
+
+    [TestMethod]
+    public async Task StopStreamingAsync_ConcurrentInvocations_DoNotDeadlock()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var ds4 = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x09CC,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Sony DualShock 4"
+        };
+        _discovery.ActiveBtController = ds4;
+
+        await controller.StartStreamingAsync(ds4);
+        Assert.IsTrue(controller.IsStreaming);
+
+        // Trigger multiple concurrent stop requests
+        var stopTask1 = controller.StopStreamingAsync();
+        var stopTask2 = controller.StopStreamingAsync();
+        var stopTask3 = controller.StopStreamingAsync();
+
+        await Task.WhenAll(stopTask1, stopTask2, stopTask3);
+
+        Assert.IsFalse(controller.IsStreaming);
+        Assert.AreEqual(StreamingState.ConnectedBluetoothReady, controller.Status.State);
+    }
+
+    [TestMethod]
+    public async Task SetOutputDestination_ToSpeaker_MutesHeadphonesAndEnablesSpeaker()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var ds4 = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x09CC,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Sony DualShock 4"
+        };
+        _discovery.ActiveBtController = ds4;
+        _settings.CurrentSettings.HeadphoneVolume = 105;
+
+        // Start in speaker mode
+        _settings.CurrentSettings.HeadsetMode = false;
+        await controller.StartStreamingAsync(ds4);
+
+        // Verify Report 0x11 arming parameters: headphoneVolume = 0, speakerVolume = 105
+        Assert.AreEqual((byte)0, _transport.LastHeadphoneVolume, "Headphones must be muted (0) in speaker mode.");
+        Assert.AreEqual((byte)105, _transport.LastSpeakerVolume, "Speaker must receive volume in speaker mode.");
+
+        await controller.StopStreamingAsync();
+    }
+
+    [TestMethod]
+    public async Task SetOutputDestination_ToHeadphones_MutesSpeakerAndEnablesHeadphones()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var ds4 = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x09CC,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Sony DualShock 4"
+        };
+        _discovery.ActiveBtController = ds4;
+        _settings.CurrentSettings.HeadphoneVolume = 112;
+
+        // Start in headset mode
+        _settings.CurrentSettings.HeadsetMode = true;
+        await controller.StartStreamingAsync(ds4);
+
+        // Verify Report 0x11 arming parameters: headphoneVolume = 112, speakerVolume = 0
+        Assert.AreEqual((byte)112, _transport.LastHeadphoneVolume, "Headphones must receive volume in headset mode.");
+        Assert.AreEqual((byte)0, _transport.LastSpeakerVolume, "Speaker must be muted (0) in headset mode.");
+
+        await controller.StopStreamingAsync();
+    }
+
+    [TestMethod]
+    public async Task SetOutputDestination_LiveSwitchWhileStreaming_UpdatesTransportWithoutStoppingStream()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var ds4 = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x09CC,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Sony DualShock 4"
+        };
+        _discovery.ActiveBtController = ds4;
+        _settings.CurrentSettings.HeadphoneVolume = 98;
+        _settings.CurrentSettings.HeadsetMode = true;
+
+        await controller.StartStreamingAsync(ds4);
+        Assert.IsTrue(controller.IsStreaming);
+        Assert.AreEqual((byte)98, _transport.LastHeadphoneVolume);
+        Assert.AreEqual((byte)0, _transport.LastSpeakerVolume);
+
+        // Live switch to speaker while streaming
+        await controller.SetOutputDestinationAsync(false);
+        Assert.IsTrue(controller.IsStreaming, "Stream must remain active during live switch.");
+        Assert.IsFalse(_settings.CurrentSettings.HeadsetMode);
+        Assert.AreEqual((byte)0, _transport.LastHeadphoneVolume, "Headphones must be muted after live switch to speaker.");
+        Assert.AreEqual((byte)98, _transport.LastSpeakerVolume, "Speaker must be unmuted after live switch to speaker.");
+
+        // Live switch back to headphones
+        await controller.SetOutputDestinationAsync(true);
+        Assert.IsTrue(controller.IsStreaming, "Stream must remain active during second live switch.");
+        Assert.IsTrue(_settings.CurrentSettings.HeadsetMode);
+        Assert.AreEqual((byte)98, _transport.LastHeadphoneVolume, "Headphones must be unmuted after live switch back.");
+        Assert.AreEqual((byte)0, _transport.LastSpeakerVolume, "Speaker must be muted after live switch back.");
+
+        await controller.StopStreamingAsync();
+        Assert.IsFalse(controller.IsStreaming);
     }
 }

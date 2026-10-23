@@ -61,11 +61,11 @@ public partial class MainWindow : Window
             _settingsService,
             _diagnosticService);
 
-        // Subscribe to events
+        // Subscribe to events (asynchronous dispatch to prevent background-thread deadlocks)
         _diagnosticService.LogReceived += OnLogMessageReceived;
-        _streamingController.StatusChanged += (s, status) => Dispatcher.Invoke(() => UpdateUiFromStatus(status));
-        _discoveryService.ControllerConnected += (s, c) => Dispatcher.Invoke(() => UpdateControllerDetails(c));
-        _discoveryService.ControllerDisconnected += (s, c) => Dispatcher.Invoke(() => UpdateControllerDetails(null));
+        _streamingController.StatusChanged += (s, status) => Dispatcher.InvokeAsync(() => UpdateUiFromStatus(status));
+        _discoveryService.ControllerConnected += (s, c) => Dispatcher.InvokeAsync(() => UpdateControllerDetails(c));
+        _discoveryService.ControllerDisconnected += (s, c) => Dispatcher.InvokeAsync(() => UpdateControllerDetails(null));
 
         // Setup System Tray
         _notifyIcon = new Forms.NotifyIcon
@@ -286,8 +286,13 @@ public partial class MainWindow : Window
             TxtSettingsInterface.Text = "Disconnected";
             TxtSettingsCapability.Text = "Not Detected";
             TxtSettingsDevicePath.Text = "-";
+            TxtSettingsBattery.Text = "-";
+            BorderBatteryWidget.Visibility = Visibility.Collapsed;
             return;
         }
+
+        // Update Battery Indicator
+        UpdateBatteryUi(controller.BatteryPercent, controller.IsCharging);
 
         // Settings details
         TxtSettingsControllerName.Text = controller.DisplayName;
@@ -335,8 +340,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdateBatteryUi(int percent, bool isCharging)
+    {
+        if (percent < 0)
+        {
+            BorderBatteryWidget.Visibility = Visibility.Visible;
+            TxtBatteryPercent.Text = "--%";
+            IconBatteryBolt.Visibility = Visibility.Collapsed;
+            BatteryFill.Width = 4;
+            BatteryFill.Background = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+            BorderBatteryWidget.ToolTip = "Reading controller battery telemetry...";
+            TxtSettingsBattery.Text = "Reading...";
+            return;
+        }
+
+        BorderBatteryWidget.Visibility = Visibility.Visible;
+        TxtBatteryPercent.Text = $"{percent}%";
+
+        // Battery fill container width is 15px max
+        double fillWidth = Math.Max(2.0, Math.Min(15.0, (percent / 100.0) * 15.0));
+        BatteryFill.Width = fillWidth;
+
+        if (isCharging)
+        {
+            IconBatteryBolt.Visibility = Visibility.Visible;
+            BatteryFill.Background = new SolidColorBrush(Color.FromRgb(56, 189, 248)); // Cyan #38BDF8
+            BorderBatteryWidget.ToolTip = $"Controller Battery: {percent}% (Charging)";
+            TxtSettingsBattery.Text = $"{percent}% (Charging)";
+        }
+        else
+        {
+            IconBatteryBolt.Visibility = Visibility.Collapsed;
+            Color fillColor;
+            if (percent > 50)
+                fillColor = Color.FromRgb(34, 197, 94); // Green #22C55E
+            else if (percent > 20)
+                fillColor = Color.FromRgb(234, 179, 8); // Yellow #EAB308
+            else
+                fillColor = Color.FromRgb(239, 68, 68); // Red #EF4444
+
+            BatteryFill.Background = new SolidColorBrush(fillColor);
+            BorderBatteryWidget.ToolTip = $"Controller Battery: {percent}%";
+            TxtSettingsBattery.Text = $"{percent}%";
+        }
+    }
+
     private void UpdateUiFromStatus(StreamingStatus status)
     {
+        if (status.ControllerBatteryPercent >= 0)
+        {
+            UpdateBatteryUi(status.ControllerBatteryPercent, status.IsControllerCharging);
+        }
+
         switch (status.State)
         {
             case StreamingState.Streaming:
@@ -351,6 +406,14 @@ public partial class MainWindow : Window
                 DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(59, 130, 246)); // Blue
                 TxtAudioStatus.Text = "Audio Transmission: Starting...";
                 TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(96, 165, 250));
+                BtnStartStreaming.IsEnabled = false;
+                BtnStopStreaming.IsEnabled = false;
+                break;
+
+            case StreamingState.Stopping:
+                DotAudioStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
+                TxtAudioStatus.Text = "Audio Transmission: Stopping...";
+                TxtAudioStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
                 BtnStartStreaming.IsEnabled = false;
                 BtnStopStreaming.IsEnabled = false;
                 break;
@@ -450,6 +513,7 @@ public partial class MainWindow : Window
         ChkMinimizeToTray.IsChecked = settings.MinimizeToTray;
         UpdateVolumeLabel(settings.HeadphoneVolume);
         UpdateSpeakerMuteButton(_captureService.IsEndpointMuted);
+        UpdateOutputSelectorVisual(settings.HeadsetMode, animate: false);
     }
 
     private void RefreshAudioDevices()
@@ -519,6 +583,96 @@ public partial class MainWindow : Window
     {
         int percent = (int)Math.Round((volume / 127.0) * 100);
         TxtVolumeValue.Text = $"{percent}% ({volume}/127)";
+    }
+
+    // ==========================================
+    // OUTPUT ROUTING SEGMENTED TOGGLE
+    // ==========================================
+
+    private async void OnSegmentSpeakerClicked(object sender, RoutedEventArgs e)
+    {
+        if (!_settingsService.CurrentSettings.HeadsetMode) return;
+        UpdateOutputSelectorVisual(false, animate: true);
+        await _streamingController.SetOutputDestinationAsync(false);
+    }
+
+    private async void OnSegmentHeadphonesClicked(object sender, RoutedEventArgs e)
+    {
+        if (_settingsService.CurrentSettings.HeadsetMode) return;
+        UpdateOutputSelectorVisual(true, animate: true);
+        await _streamingController.SetOutputDestinationAsync(true);
+    }
+
+    private void OnSegmentButtonKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Left)
+        {
+            OnSegmentSpeakerClicked(sender, e);
+            BtnSegmentSpeaker.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Right)
+        {
+            OnSegmentHeadphonesClicked(sender, e);
+            BtnSegmentHeadphones.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void OnSegmentContainerSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateOutputSelectorVisual(_settingsService.CurrentSettings.HeadsetMode, animate: false);
+    }
+
+    private void UpdateOutputSelectorVisual(bool headsetMode, bool animate = true)
+    {
+        // Badge text and color
+        TxtActiveOutputBadge.Text = headsetMode ? "AUX / Headphone Jack" : "Internal Speaker";
+
+        // Segment text and icon colors
+        if (headsetMode)
+        {
+            // Headphones is active
+            TxtSegmentHeadphones.Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
+            TxtSegmentHeadphones.FontWeight = FontWeights.SemiBold;
+            IconHeadphones.Fill = new SolidColorBrush(Color.FromRgb(254, 226, 226)); // Soft light red/white
+
+            TxtSegmentSpeaker.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)); // Greyed out
+            TxtSegmentSpeaker.FontWeight = FontWeights.Normal;
+            IconSpeaker.Fill = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+        }
+        else
+        {
+            // Speaker is active
+            TxtSegmentSpeaker.Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
+            TxtSegmentSpeaker.FontWeight = FontWeights.SemiBold;
+            IconSpeaker.Fill = new SolidColorBrush(Color.FromRgb(254, 226, 226)); // Soft light red/white
+
+            TxtSegmentHeadphones.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)); // Greyed out
+            TxtSegmentHeadphones.FontWeight = FontWeights.Normal;
+            IconHeadphones.Fill = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+        }
+
+        // Sliding pill transition
+        double containerWidth = GridSegmented.ActualWidth;
+        double segmentWidth = containerWidth > 0 ? (containerWidth / 2.0) : 0;
+        double targetX = headsetMode ? segmentWidth : 0.0;
+
+        if (animate && segmentWidth > 0)
+        {
+            var anim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                To = targetX,
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+            };
+            TransIndicator.BeginAnimation(TranslateTransform.XProperty, anim);
+        }
+        else
+        {
+            TransIndicator.BeginAnimation(TranslateTransform.XProperty, null);
+            TransIndicator.X = targetX;
+        }
     }
 
     private void OnToggleSpeakerMuteClicked(object sender, RoutedEventArgs e)
@@ -604,7 +758,7 @@ public partial class MainWindow : Window
             TxtPacketsSent.Text = $"{status.PacketsSent:N0} ({kbSent:N0} KB)";
             TxtEstimatedLatency.Text = $"{status.EstimatedLatencyMs:F0} ms";
             PbBufferLevel.Value = Math.Min(96, status.BufferLevelFrames);
-            TxtUnderruns.Text = $"{status.UnderrunCount:N0}";
+            TxtUnderruns.Text = $"{status.UnderrunCount:N0} / {status.DroppedFramesCount:N0}";
         }
         else
         {

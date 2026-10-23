@@ -10,4 +10,5 @@ public sealed class AppSettings
     public bool HeadsetMode { get; set; } = true; // true = 3.5mm jack (0x24), false = speaker (0x02)
     public bool VerboseLogging { get; set; } = false;
     public bool MuteSpeakersWhileStreaming { get; set; } = true; // Mute physical PC speakers during streaming
+    public int SoftwareGainPercent { get; set; } = 100; // Range 50 - 200% (software digital gain with soft-knee limiting)
 }

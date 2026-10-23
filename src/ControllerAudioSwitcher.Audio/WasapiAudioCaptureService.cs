@@ -22,6 +22,7 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
     private short[] _resampledLeft = new short[4096];
     private short[] _resampledRight = new short[4096];
     private float[] _floatBuffer = new float[8192];
+    private static readonly Guid SubtypeIeeeFloat = new("00000003-0000-0010-8000-00aa00389b71");
 
     public bool IsCapturing
     {
@@ -122,6 +123,20 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
         return list;
     }
 
+    private float _softwareGain = 1.20f;
+
+    public void SetSoftwareGain(float gain)
+    {
+        lock (_syncRoot)
+        {
+            _softwareGain = Math.Clamp(gain, 0.5f, 2.5f);
+            if (_resampler != null)
+            {
+                _resampler.SoftwareGain = _softwareGain;
+            }
+        }
+    }
+
     public void StartCapture(string? deviceId = null, bool muteSpeakers = false)
     {
         lock (_syncRoot)
@@ -166,7 +181,7 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
                 _capture = new WasapiLoopbackCapture(targetDevice);
                 int sourceSampleRate = _capture.WaveFormat.SampleRate;
 
-                _resampler = new AudioResampler(sourceSampleRate, 32000);
+                _resampler = new AudioResampler(sourceSampleRate, 32000, _softwareGain);
                 _capture.DataAvailable += OnCaptureDataAvailable;
                 _capture.RecordingStopped += OnRecordingStopped;
 
@@ -203,7 +218,7 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
                 {
                     _capture.DataAvailable -= OnCaptureDataAvailable;
                     _capture.RecordingStopped -= OnRecordingStopped;
-                    _capture.StopRecording();
+                    try { _capture.StopRecording(); } catch { }
                     _capture.Dispose();
                 }
             }
@@ -223,27 +238,44 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
 
     private void OnCaptureDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (e.BytesRecorded == 0 || _resampler == null || _capture == null)
+        if (e.BytesRecorded == 0 || !_isCapturing)
+            return;
+
+        AudioResampler? resampler;
+        WaveFormat? format;
+        lock (_syncRoot)
+        {
+            resampler = _resampler;
+            format = _capture?.WaveFormat;
+        }
+
+        if (resampler == null || format == null)
             return;
 
         try
         {
-            var format = _capture.WaveFormat;
             int bytesPerSample = format.BitsPerSample / 8;
+            if (bytesPerSample <= 0) return;
             int channels = format.Channels;
+            if (channels <= 0) return;
             int frameCount = e.BytesRecorded / (bytesPerSample * channels);
+            if (frameCount <= 0) return;
 
             if (_floatBuffer.Length < frameCount * 2)
             {
                 _floatBuffer = new float[frameCount * 2 * 2];
             }
 
-            if (format.Encoding == WaveFormatEncoding.IeeeFloat)
+            bool isFloat = format.Encoding == WaveFormatEncoding.IeeeFloat ||
+                           (format is WaveFormatExtensible wfe && wfe.SubFormat == SubtypeIeeeFloat) ||
+                           (format.BitsPerSample == 32 && format.Encoding == WaveFormatEncoding.Extensible);
+
+            if (isFloat && format.BitsPerSample == 32)
             {
                 var spanFloats = MemoryMarshal.Cast<byte, float>(e.Buffer.AsSpan(0, e.BytesRecorded));
                 if (channels == 2)
                 {
-                    spanFloats.CopyTo(_floatBuffer.AsSpan(0, frameCount * 2));
+                    spanFloats[..(frameCount * 2)].CopyTo(_floatBuffer.AsSpan(0, frameCount * 2));
                 }
                 else if (channels == 1)
                 {
@@ -256,31 +288,104 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
                 }
                 else
                 {
-                    // Multi-channel downmix to stereo (take front left and front right)
+                    // Multi-channel downmix (stereo fold-down with center and surround channels)
+                    // Standard 5.1/7.1: 0=FL, 1=FR, 2=FC, 3=LFE, 4=BL/SL, 5=BR/SR
                     for (int i = 0; i < frameCount; i++)
                     {
-                        _floatBuffer[i * 2] = spanFloats[i * channels];
-                        _floatBuffer[i * 2 + 1] = spanFloats[i * channels + 1];
+                        int baseIdx = i * channels;
+                        float fl = spanFloats[baseIdx];
+                        float fr = spanFloats[baseIdx + 1];
+                        float fc = channels > 2 ? spanFloats[baseIdx + 2] : 0.0f;
+                        float sl = channels > 4 ? spanFloats[baseIdx + 4] : 0.0f;
+                        float sr = channels > 5 ? spanFloats[baseIdx + 5] : 0.0f;
+
+                        _floatBuffer[i * 2] = (fl + 0.7071f * fc + 0.7071f * sl) * 0.7f;
+                        _floatBuffer[i * 2 + 1] = (fr + 0.7071f * fc + 0.7071f * sr) * 0.7f;
                     }
                 }
             }
             else if (format.BitsPerSample == 16)
             {
                 var spanShorts = MemoryMarshal.Cast<byte, short>(e.Buffer.AsSpan(0, e.BytesRecorded));
-                for (int i = 0; i < frameCount; i++)
+                if (channels == 2)
                 {
-                    if (channels >= 2)
+                    for (int i = 0; i < frameCount; i++)
                     {
-                        _floatBuffer[i * 2] = spanShorts[i * channels] / 32768.0f;
-                        _floatBuffer[i * 2 + 1] = spanShorts[i * channels + 1] / 32768.0f;
+                        _floatBuffer[i * 2] = spanShorts[i * 2] / 32768.0f;
+                        _floatBuffer[i * 2 + 1] = spanShorts[i * 2 + 1] / 32768.0f;
                     }
-                    else
+                }
+                else if (channels == 1)
+                {
+                    for (int i = 0; i < frameCount; i++)
                     {
                         float val = spanShorts[i] / 32768.0f;
                         _floatBuffer[i * 2] = val;
                         _floatBuffer[i * 2 + 1] = val;
                     }
                 }
+                else
+                {
+                    for (int i = 0; i < frameCount; i++)
+                    {
+                        int baseIdx = i * channels;
+                        float fl = spanShorts[baseIdx] / 32768.0f;
+                        float fr = spanShorts[baseIdx + 1] / 32768.0f;
+                        float fc = channels > 2 ? spanShorts[baseIdx + 2] / 32768.0f : 0.0f;
+                        _floatBuffer[i * 2] = (fl + 0.7071f * fc) * 0.75f;
+                        _floatBuffer[i * 2 + 1] = (fr + 0.7071f * fc) * 0.75f;
+                    }
+                }
+            }
+            else if (format.BitsPerSample == 24)
+            {
+                var buf = e.Buffer;
+                int bytesPerFrame = bytesPerSample * channels;
+                for (int i = 0; i < frameCount; i++)
+                {
+                    int offset = i * bytesPerFrame;
+                    int sL = buf[offset] | (buf[offset + 1] << 8) | ((sbyte)buf[offset + 2] << 16);
+                    float left = sL / 8388608.0f;
+
+                    float right;
+                    if (channels >= 2)
+                    {
+                        int offsetR = offset + 3;
+                        int sR = buf[offsetR] | (buf[offsetR + 1] << 8) | ((sbyte)buf[offsetR + 2] << 16);
+                        right = sR / 8388608.0f;
+                    }
+                    else
+                    {
+                        right = left;
+                    }
+
+                    _floatBuffer[i * 2] = left;
+                    _floatBuffer[i * 2 + 1] = right;
+                }
+            }
+            else if (format.BitsPerSample == 32)
+            {
+                // 32-bit signed integer PCM
+                var spanInts = MemoryMarshal.Cast<byte, int>(e.Buffer.AsSpan(0, e.BytesRecorded));
+                for (int i = 0; i < frameCount; i++)
+                {
+                    if (channels >= 2)
+                    {
+                        _floatBuffer[i * 2] = spanInts[i * channels] / 2147483648.0f;
+                        _floatBuffer[i * 2 + 1] = spanInts[i * channels + 1] / 2147483648.0f;
+                    }
+                    else
+                    {
+                        float val = spanInts[i] / 2147483648.0f;
+                        _floatBuffer[i * 2] = val;
+                        _floatBuffer[i * 2 + 1] = val;
+                    }
+                }
+            }
+            else
+            {
+                // Unsupported bit depth fallback: log error once
+                return;
             }
 
             int estimatedOutputFrames = (int)Math.Ceiling(frameCount * (32000.0 / format.SampleRate)) + 32;
@@ -290,12 +395,12 @@ public sealed class WasapiAudioCaptureService : IAudioCaptureService
                 _resampledRight = new short[estimatedOutputFrames * 2];
             }
 
-            int resampledCount = _resampler.ResampleStereoFloat(
+            int resampledCount = resampler.ResampleStereoFloat(
                 _floatBuffer.AsSpan(0, frameCount * 2),
                 _resampledLeft.AsSpan(),
                 _resampledRight.AsSpan());
 
-            if (resampledCount > 0)
+            if (resampledCount > 0 && _isCapturing)
             {
                 SamplesAvailable?.Invoke(this, new AudioSamplesEventArgs(_resampledLeft, _resampledRight, resampledCount));
             }

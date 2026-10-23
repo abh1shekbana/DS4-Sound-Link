@@ -38,6 +38,18 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
     private IntPtr _controlWriteEvent;
     private GCHandle _pinnedControlBuffer;
 
+    // Battery telemetry reporting
+    public event EventHandler<(int batteryPercent, bool isCharging)>? BatteryReportReceived;
+    public int CurrentBatteryPercent { get; private set; } = -1;
+    public bool IsCharging { get; private set; }
+
+    // Input report reader for battery telemetry
+    private readonly byte[] _inputReportBuffer = new byte[128];
+    private GCHandle _pinnedInputBuffer;
+    private IntPtr _readOverlappedPtr;
+    private IntPtr _readEvent;
+    private CancellationTokenSource? _readerCts;
+
     public bool IsOpen
     {
         get
@@ -61,6 +73,10 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
         _controlWriteEvent = HidNativeMethods.CreateEvent(IntPtr.Zero, true, false, null);
         _controlOverlappedPtr = Marshal.AllocHGlobal(Marshal.SizeOf<HidNativeMethods.OVERLAPPED>());
         ZeroOverlapped(_controlOverlappedPtr, _controlWriteEvent);
+
+        _readEvent = HidNativeMethods.CreateEvent(IntPtr.Zero, true, false, null);
+        _readOverlappedPtr = Marshal.AllocHGlobal(Marshal.SizeOf<HidNativeMethods.OVERLAPPED>());
+        ZeroOverlapped(_readOverlappedPtr, _readEvent);
     }
 
     private static void ZeroOverlapped(IntPtr overlappedPtr, IntPtr hEvent)
@@ -121,13 +137,107 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
                     _pinnedControlBuffer = GCHandle.Alloc(_controlReportBuffer, GCHandleType.Pinned);
                 }
 
+                if (!_pinnedInputBuffer.IsAllocated)
+                {
+                    _pinnedInputBuffer = GCHandle.Alloc(_inputReportBuffer, GCHandleType.Pinned);
+                }
+
                 _currentBufferIndex = 0;
+
+                // Start background reader for battery telemetry
+                _readerCts = new CancellationTokenSource();
+                var token = _readerCts.Token;
+                Task.Run(() => InputReportReaderLoop(token), token);
+
                 return true;
             }
             catch
             {
                 Close();
                 return false;
+            }
+        }
+    }
+
+    private void InputReportReaderLoop(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested && IsOpen)
+        {
+            SafeFileHandle? handle;
+            lock (_syncRoot)
+            {
+                handle = _deviceHandle;
+            }
+
+            if (handle == null || handle.IsInvalid || handle.IsClosed)
+                break;
+
+            try
+            {
+                HidNativeMethods.ResetEvent(_readEvent);
+                ZeroOverlapped(_readOverlappedPtr, _readEvent);
+
+                IntPtr bufPtr = _pinnedInputBuffer.AddrOfPinnedObject();
+                bool readSuccess = HidNativeMethods.ReadFile(
+                    handle,
+                    bufPtr,
+                    (uint)_inputReportBuffer.Length,
+                    out uint bytesRead,
+                    _readOverlappedPtr);
+
+                if (!readSuccess)
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    const int errorIoPending = 997;
+                    if (err == errorIoPending)
+                    {
+                        uint wait = HidNativeMethods.WaitForSingleObject(_readEvent, 200);
+                        if (wait == HidNativeMethods.WaitObject0)
+                        {
+                            readSuccess = HidNativeMethods.GetOverlappedResult(handle, _readOverlappedPtr, out bytesRead, false);
+                        }
+                        else
+                        {
+                            HidNativeMethods.CancelIoEx(handle, _readOverlappedPtr);
+                            readSuccess = false;
+                        }
+                    }
+                }
+
+                if (readSuccess && bytesRead > 0)
+                {
+                    if (DualShock4BatteryParser.TryParse(_inputReportBuffer.AsSpan(0, (int)bytesRead), out int percent, out bool charging))
+                    {
+                        if (percent != CurrentBatteryPercent || charging != IsCharging)
+                        {
+                            CurrentBatteryPercent = percent;
+                            IsCharging = charging;
+                            if (_currentController != null)
+                            {
+                                _currentController.BatteryPercent = percent;
+                                _currentController.IsCharging = charging;
+                            }
+                            BatteryReportReceived?.Invoke(this, (percent, charging));
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore transient read errors during stream transitions
+            }
+
+            try
+            {
+                Task.Delay(1000, token).Wait(token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                break;
             }
         }
     }
@@ -282,6 +392,23 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
 
     public void Close()
     {
+        CancellationTokenSource? cts;
+        lock (_syncRoot)
+        {
+            cts = _readerCts;
+            _readerCts = null;
+        }
+
+        if (cts != null)
+        {
+            try
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
+            catch { }
+        }
+
         lock (_syncRoot)
         {
             if (_deviceHandle != null)
@@ -299,6 +426,10 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
                             }
                         }
                         HidNativeMethods.CancelIoEx(_deviceHandle, _controlOverlappedPtr);
+                        if (_readOverlappedPtr != IntPtr.Zero)
+                        {
+                            HidNativeMethods.CancelIoEx(_deviceHandle, _readOverlappedPtr);
+                        }
                         _deviceHandle.Close();
                     }
                 }
@@ -321,6 +452,11 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
             if (_pinnedControlBuffer.IsAllocated)
             {
                 _pinnedControlBuffer.Free();
+            }
+
+            if (_pinnedInputBuffer.IsAllocated)
+            {
+                _pinnedInputBuffer.Free();
             }
         }
     }
@@ -357,6 +493,18 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
         {
             Marshal.FreeHGlobal(_controlOverlappedPtr);
             _controlOverlappedPtr = IntPtr.Zero;
+        }
+
+        if (_readEvent != IntPtr.Zero)
+        {
+            HidNativeMethods.CloseHandle(_readEvent);
+            _readEvent = IntPtr.Zero;
+        }
+
+        if (_readOverlappedPtr != IntPtr.Zero)
+        {
+            Marshal.FreeHGlobal(_readOverlappedPtr);
+            _readOverlappedPtr = IntPtr.Zero;
         }
     }
 }

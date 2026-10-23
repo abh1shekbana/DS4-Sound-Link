@@ -12,4 +12,6 @@ public interface IAudioStreamingController : IDisposable
     Task<bool> StartStreamingAsync(ControllerInfo? targetController = null);
     Task StopStreamingAsync();
     void SetVolume(byte volume);
+    Task SetOutputDestinationAsync(bool headsetMode);
+    void SetSoftwareGain(float gain);
 }

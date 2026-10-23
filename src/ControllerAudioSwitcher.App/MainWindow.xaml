@@ -6,8 +6,8 @@
         mc:Ignorable="d"
         Title="DS4-SoundLink" 
         Icon="app.ico"
-        Height="380" Width="450" 
-        MinHeight="360" MinWidth="420"
+        Height="440" Width="460" 
+        MinHeight="410" MinWidth="430"
         Background="#0F1117"
         Foreground="#E2E8F0"
         FontFamily="Segoe UI Variable, Segoe UI, sans-serif"
@@ -335,6 +335,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Ellipse x:Name="DotControllerStatus" Grid.Column="0" Width="10" Height="10" Fill="#71717A" 
                                  Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -344,6 +345,30 @@
                             <TextBlock x:Name="TxtControllerSubtext" Text="Pair controller using Share + PS" 
                                        FontSize="11" Foreground="#64748B" Margin="0,2,0,0"/>
                         </StackPanel>
+
+                        <!-- BATTERY LEVEL INDICATOR WIDGET -->
+                        <Border x:Name="BorderBatteryWidget" Grid.Column="2" VerticalAlignment="Center" 
+                                Background="#141720" BorderBrush="#252A38" BorderThickness="1" CornerRadius="6" 
+                                Padding="8,4" ToolTip="Controller Battery Level" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- Battery Icon Container -->
+                                <Grid Width="22" Height="12" Margin="0,0,6,0" VerticalAlignment="Center">
+                                    <Border BorderBrush="#64748B" BorderThickness="1.2" CornerRadius="2.5" Background="#0F1219" 
+                                            Width="19" Height="12" HorizontalAlignment="Left" SnapsToDevicePixels="True">
+                                        <Border x:Name="BatteryFill" Background="#22C55E" CornerRadius="1.5" 
+                                                Width="14" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center" 
+                                                Margin="1,0,0,0"/>
+                                    </Border>
+                                    <Border Width="2.5" Height="5" CornerRadius="0,1,1,0" Background="#64748B" 
+                                            HorizontalAlignment="Right" VerticalAlignment="Center" SnapsToDevicePixels="True"/>
+                                    <Path x:Name="IconBatteryBolt" Data="M3,0 L0,5 L3,5 L2,9 L7,3.5 L4,3.5 Z" 
+                                          Fill="#38BDF8" Width="7" Height="9" Stretch="Uniform" 
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                </Grid>
+                                <TextBlock x:Name="TxtBatteryPercent" Text="--%" FontSize="11" FontWeight="SemiBold" 
+                                           Foreground="#F1F5F9" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
                     </Grid>
                 </Border>
 
@@ -361,8 +386,72 @@
                     </Grid>
                 </Border>
 
-                <!-- D. PRIMARY START AND STOP CONTROLS -->
-                <Grid Margin="0,6,0,0">
+                <!-- D. AUDIO OUTPUT DESTINATION SELECTOR (SLIDING SEGMENTED CONTROL) -->
+                <Border Style="{StaticResource CardPanel}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="AUDIO OUTPUT ROUTING" FontSize="11" FontWeight="SemiBold" Foreground="#64748B" VerticalAlignment="Center"/>
+                            <Border Grid.Column="1" Background="#261215" BorderBrush="#501C24" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                <TextBlock x:Name="TxtActiveOutputBadge" Text="AUX / Headphone Jack" FontSize="10" FontWeight="SemiBold" Foreground="#F87171"/>
+                            </Border>
+                        </Grid>
+
+                        <!-- Modern Two-Position Segmented Sliding Toggle -->
+                        <Border x:Name="BorderSegmentedContainer" Height="36" Background="#11131A" BorderBrush="#232735" 
+                                BorderThickness="1" CornerRadius="7" Padding="3" ClipToBounds="True"
+                                SizeChanged="OnSegmentContainerSizeChanged">
+                            <Grid x:Name="GridSegmented">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Smooth Sliding Soft-Red Pill Highlight -->
+                                <Border x:Name="PillIndicator" Grid.Column="0" CornerRadius="5" 
+                                        Background="#8B1D2C" BorderBrush="#B91C1C" BorderThickness="1"
+                                        IsHitTestVisible="False">
+                                    <Border.RenderTransform>
+                                        <TranslateTransform x:Name="TransIndicator" X="0"/>
+                                    </Border.RenderTransform>
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#EF4444" Direction="270" ShadowDepth="1" BlurRadius="6" Opacity="0.3"/>
+                                    </Border.Effect>
+                                </Border>
+
+                                <!-- Position 1: Internal Speaker -->
+                                <Button x:Name="BtnSegmentSpeaker" Grid.Column="0" Click="OnSegmentSpeakerClicked"
+                                        KeyDown="OnSegmentButtonKeyDown" FocusVisualStyle="{x:Null}"
+                                        Background="Transparent" BorderThickness="0" Cursor="Hand" IsTabStop="True">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Path x:Name="IconSpeaker" Data="M3,9 L3,15 L7,15 L12,20 L12,4 L7,9 Z M16.5,12 C16.5,10.23 15.48,8.71 14,7.97 L14,16.02 C15.48,15.29 16.5,13.77 16.5,12 Z" 
+                                              Fill="#64748B" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtSegmentSpeaker" Text="Internal Speaker" FontSize="11" 
+                                                   FontWeight="Normal" Foreground="#64748B" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <!-- Position 2: AUX / Headphone Jack -->
+                                <Button x:Name="BtnSegmentHeadphones" Grid.Column="1" Click="OnSegmentHeadphonesClicked"
+                                        KeyDown="OnSegmentButtonKeyDown" FocusVisualStyle="{x:Null}"
+                                        Background="Transparent" BorderThickness="0" Cursor="Hand" IsTabStop="True">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Path x:Name="IconHeadphones" Data="{StaticResource GeoHeadphones}" 
+                                              Fill="#FFFFFF" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtSegmentHeadphones" Text="AUX / Headphone Jack" FontSize="11" 
+                                                   FontWeight="SemiBold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- E. PRIMARY START AND STOP CONTROLS -->
+                <Grid Margin="0,4,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
@@ -477,11 +566,27 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="3.5 mm Jack Volume:" FontSize="12" Foreground="#CBD5E1"/>
+                                <TextBlock Text="Controller Hardware Volume:" FontSize="12" Foreground="#CBD5E1"/>
                                 <TextBlock x:Name="TxtVolumeValue" Grid.Column="1" Text="86% (110/127)" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC"/>
                             </Grid>
                             <Slider x:Name="SliderVolume" Minimum="0" Maximum="127" Value="110" TickFrequency="1" 
-                                    IsSnapToTickEnabled="True" Margin="0,4,0,12" ValueChanged="OnVolumeChanged"/>
+                                    IsSnapToTickEnabled="True" Margin="0,4,0,10" ValueChanged="OnVolumeChanged"/>
+
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Path Data="M12,2 A10,10 0 0,0 2,12 A10,10 0 0,0 12,22 A10,10 0 0,0 22,12 A10,10 0 0,0 12,2 Z M11,16.5 L6.5,12 L7.91,10.59 L11,13.67 L16.09,8.59 L17.5,10 L11,16.5 Z" 
+                                          Fill="#10B981" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Smart Headroom &amp; Dynamic AGC:" FontSize="12" Foreground="#CBD5E1" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#132E27" BorderBrush="#059669" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                    <TextBlock Text="Automatic (Active)" FontSize="10" FontWeight="SemiBold" Foreground="#34D399"/>
+                                </Border>
+                            </Grid>
+
                             <CheckBox x:Name="ChkMuteSpeakers" Content="Mute PC speakers during streaming (Headphone isolation)" 
                                       Margin="0,0,0,8" IsChecked="True" Checked="OnSettingsOptionChanged" Unchecked="OnSettingsOptionChanged"/>
                             <Button x:Name="BtnToggleSpeakerMute" Click="OnToggleSpeakerMuteClicked" 
@@ -522,6 +627,14 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Interface:" FontSize="11" Foreground="#64748B"/>
                                 <TextBlock x:Name="TxtSettingsInterface" Grid.Column="1" Text="Disconnected" FontSize="11" Foreground="#CBD5E1"/>
+                            </Grid>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Battery Level:" FontSize="11" Foreground="#64748B"/>
+                                <TextBlock x:Name="TxtSettingsBattery" Grid.Column="1" Text="-" FontSize="11" Foreground="#CBD5E1"/>
                             </Grid>
                             <Grid Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
@@ -608,8 +721,8 @@
                         <TextBlock x:Name="TxtEstimatedLatency" Text="Idle" FontSize="11" FontWeight="SemiBold" Foreground="#F8FAFC"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="Underruns" FontSize="10" Foreground="#64748B"/>
-                        <TextBlock x:Name="TxtUnderruns" Text="0" FontSize="11" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                        <TextBlock Text="Underruns / Drops" FontSize="10" Foreground="#64748B"/>
+                        <TextBlock x:Name="TxtUnderruns" Text="0 / 0" FontSize="11" FontWeight="SemiBold" Foreground="#F8FAFC"/>
                     </StackPanel>
                     <StackPanel Grid.Column="3">
                         <TextBlock Text="Buffer" FontSize="10" Foreground="#64748B"/>

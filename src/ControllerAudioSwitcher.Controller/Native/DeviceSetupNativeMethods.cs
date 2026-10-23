@@ -8,10 +8,24 @@ internal static class DeviceSetupNativeMethods
     public const int DIGCF_PRESENT = 0x00000002;
     public const int DIGCF_DEVICEINTERFACE = 0x00000010;
 
+    public const uint GenericRead = 0x80000000;
     public const uint FileShareRead = 0x00000001;
     public const uint FileShareWrite = 0x00000002;
     public const uint FileShareDelete = 0x00000004;
     public const uint OpenExisting = 3;
+    public const uint FileFlagOverlapped = 0x40000000;
+
+    public const uint WaitObject0 = 0x00000000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OVERLAPPED
+    {
+        public UIntPtr Internal;
+        public UIntPtr InternalHigh;
+        public uint Offset;
+        public uint OffsetHigh;
+        public IntPtr hEvent;
+    }
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     public static extern SafeFileHandle CreateFile(
@@ -22,6 +36,41 @@ internal static class DeviceSetupNativeMethods
         uint dwCreationDisposition,
         uint dwFlagsAndAttributes,
         IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ReadFile(
+        SafeFileHandle hFile,
+        IntPtr lpBuffer,
+        uint nNumberOfBytesToRead,
+        out uint lpNumberOfBytesRead,
+        IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetOverlappedResult(
+        SafeFileHandle hFile,
+        IntPtr lpOverlapped,
+        out uint lpNumberOfBytesTransferred,
+        [MarshalAs(UnmanagedType.Bool)] bool bWait);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CancelIoEx(SafeFileHandle hFile, IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateEvent(
+        IntPtr lpEventAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool bManualReset,
+        [MarshalAs(UnmanagedType.Bool)] bool bInitialState,
+        string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseHandle(IntPtr hObject);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct SP_DEVICE_INTERFACE_DATA

@@ -27,4 +27,5 @@ public interface IAudioCaptureService : IDisposable
     void StartCapture(string? deviceId = null, bool muteSpeakers = false);
     void StopCapture();
     void SetEndpointMute(bool mute, string? deviceId = null);
+    void SetSoftwareGain(float gain);
 }
