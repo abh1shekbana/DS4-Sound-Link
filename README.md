@@ -23,8 +23,8 @@ A standalone, driverless Windows 10/11 application that captures PC playback aud
 
 ---
 
-
-
+![image alt](https://github.com/abh1shekbana/DS4-Sound-Link/blob/6594cfd699df48dbdcecffd60bafed846c4b5fc0/GUI.png)
+---
 ## Overview
 
 When connected via USB, the Sony DualShock 4 exposes a standard USB Audio Class (UAC) 1.0 device. However, when connected over Bluetooth, Sony's firmware **does not register as a standard Windows A2DP or HFP audio device**. Instead, audio must be encapsulated inside vendor-defined HID Output Reports (`0x11` and `0x17`) and encoded using the Subband Codec (SBC) algorithm.
