@@ -3,12 +3,37 @@
 A high-performance, standalone Windows 10/11 application that captures PC playback audio via WASAPI Loopback and streams it wirelessly with ultra-low latency to Sony DualShock 4 and DualSense controllers connected over standard Bluetooth.
 
 ---
+## How to Use
 
+1. **Pair Controller via Bluetooth**:
+   - Disconnect the USB cable.
+   - Hold **Share + PS** until the lightbar flashes white.
+   - Go to Windows **Settings > Bluetooth & devices > Add device > Bluetooth** and select **Wireless Controller**.
+2. **Launch Application**:
+   - Run `DS4SoundLink.exe` from `bin/standalone/` or releases.
+   - The dashboard will show `Sony DualShock 4` and the status badge `Bluetooth Ready`.
+3. **Choose Output Destination**:
+   - Use sliding toggle to select **AUX / Headphone Jack** or **Internal Speaker**.
+   - If using headphones, insert standard 3.5 mm headphones into the bottom jack.
+4. **Start Streaming**:
+   - Click **▶ Start Streaming**.
+   - PC audio will immediately route to your chosen controller output.
+   - You can switch between headphones and internal speaker live while streaming without dropping audio.
+   - Click **⏹ Stop Streaming** at any time; the stream gracefully halts with zero UI freezing and can be restarted immediately.
+
+---
+
+![image alt](https://github.com/abh1shekbana/DS4-Sound-Link/blob/6594cfd699df48dbdcecffd60bafed846c4b5fc0/GUI.png)
+---
 ## Overview
 
 When connected via USB, PlayStation controllers expose standard USB Audio Class (UAC) endpoints to Windows. However, when connected over Bluetooth, Sony's firmware **does not register as a standard Windows A2DP or HFP audio device**. Instead, audio must be encapsulated inside vendor-defined HID Output Reports and encoded using specialized audio codecs (Subband Codec SBC for DualShock 4, vendor frame framing for DualSense).
 
+<<<<<<< HEAD
 `DS4SoundLink` solves this limitation by providing:
+=======
+`DS4 Sound Link` solves this limitation by providing:
+>>>>>>> 8267b6e10b1e36a7ffc2dc9d57be43ba7dd7374b
 - **Pure User-Mode Architecture**: No kernel drivers, no virtual audio cables, and no system security changes required.
 - **Universal PlayStation Controller Support**: Automatic discovery and protocol negotiation for Sony DualShock 4 (v1, v2, variants, official USB Wireless Adapter), Sony DualSense (PS5), Sony DualSense Edge, and compatible third-party gamepads.
 - **Hardware-Isolated Exclusive Output Routing**: Dedicated mutually exclusive routing between the **AUX / Headphone Jack** (3.5 mm stereo) and the **Internal Speaker** (mono downmix). Completely eliminates audio leakage and bleed into the controller speaker when headphones are selected.
@@ -84,6 +109,7 @@ The published binaries will be located at: `bin\publish\ControllerAudioSwitcher.
 ### Automated Unit Test Suite
 Run the comprehensive 58-test automated test suite:
 ```powershell
+<<<<<<< HEAD
 & "$env:USERPROFILE\.dotnet\dotnet.exe" test tests/ControllerAudioSwitcher.Core.Tests/ -c Release
 ```
 Test coverage spans:
@@ -114,6 +140,22 @@ Test coverage spans:
    - Click **⏹ Stop Streaming** at any time; the stream halts cleanly and can be restarted immediately.
 
 ---
+=======
+# Restore dependencies and build
+dotnet build ControllerAudioSwitcher.sln -c Release
+
+# Run automated tests (40 tests across protocol, resampling, transport, and concurrency)
+dotnet test tests/ControllerAudioSwitcher.Core.Tests/ -c Release
+
+# Publish self-contained single-file executable with embedded icon
+dotnet publish src/ControllerAudioSwitcher.App/ControllerAudioSwitcher.App.csproj `
+    -c Release -r win-x64 --self-contained true `
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true -p:DebugType=None `
+    -o bin/standalone
+
+
+>>>>>>> 8267b6e10b1e36a7ffc2dc9d57be43ba7dd7374b
 
 ## Licensing & Third-Party Notices
 
