@@ -370,8 +370,72 @@ public class AudioStreamingControllerTests
         Assert.IsTrue(_settings.CurrentSettings.HeadsetMode);
         Assert.AreEqual((byte)98, _transport.LastHeadphoneVolume, "Headphones must be unmuted after live switch back.");
         Assert.AreEqual((byte)0, _transport.LastSpeakerVolume, "Speaker must be muted after live switch back.");
+        Assert.AreEqual(AudioOutputRoute.Headphones, controller.Status.ActiveOutputRoute);
 
         await controller.StopStreamingAsync();
         Assert.IsFalse(controller.IsStreaming);
+        Assert.AreEqual(AudioOutputRoute.Disconnected, controller.Status.ActiveOutputRoute);
+    }
+
+    [TestMethod]
+    public async Task SetOutputDestination_RejectsUnsupportedRouting_WhenCapabilityIsUnsupported()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var limitedPad = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x09CC,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Limited Pad",
+            Capabilities = new ControllerCapabilities
+            {
+                BtAudioStreaming = ControllerCapabilityState.Supported,
+                InternalSpeakerRouting = ControllerCapabilityState.Unsupported, // Has no internal speaker!
+                HeadphoneRouting = ControllerCapabilityState.Supported
+            }
+        };
+        _discovery.ActiveBtController = limitedPad;
+        _settings.CurrentSettings.HeadsetMode = true;
+
+        await controller.StartStreamingAsync(limitedPad);
+        Assert.IsTrue(controller.IsStreaming);
+        Assert.AreEqual(AudioOutputRoute.Headphones, controller.Status.ActiveOutputRoute);
+
+        // Attempt to switch to internal speaker, which is unsupported on this controller
+        await controller.SetOutputDestinationAsync(false);
+
+        // Must reject switch and retain headphones as confirmed route
+        Assert.AreEqual(AudioOutputRoute.Headphones, controller.Status.ActiveOutputRoute);
+        Assert.IsTrue(_settings.CurrentSettings.HeadsetMode);
+
+        await controller.StopStreamingAsync();
+    }
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WithDualSense_ArmsAndStreamsSuccessfully()
+    {
+        using var controller = new AudioStreamingController(_discovery, _capture, _encoder, _transport, _settings, _diag);
+
+        var dualSense = new ControllerInfo
+        {
+            VendorId = 0x054C,
+            ProductId = 0x0CE6,
+            Model = ControllerModel.DualSense,
+            ConnectionType = ControllerConnectionType.Bluetooth,
+            DisplayName = "Sony DualSense (PS5)",
+            Capabilities = ControllerCapabilities.Create(ControllerModel.DualSense, ControllerConnectionType.Bluetooth)
+        };
+        _discovery.ActiveBtController = dualSense;
+        _settings.CurrentSettings.HeadsetMode = true;
+
+        bool started = await controller.StartStreamingAsync(dualSense);
+        Assert.IsTrue(started);
+        Assert.IsTrue(controller.IsStreaming);
+        Assert.AreEqual(AudioOutputRoute.Headphones, controller.Status.ActiveOutputRoute);
+
+        await controller.StopStreamingAsync();
+        Assert.IsFalse(controller.IsStreaming);
+        Assert.AreEqual(AudioOutputRoute.Disconnected, controller.Status.ActiveOutputRoute);
     }
 }

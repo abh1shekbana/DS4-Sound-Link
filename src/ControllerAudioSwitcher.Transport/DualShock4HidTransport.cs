@@ -206,7 +206,32 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
 
                 if (readSuccess && bytesRead > 0)
                 {
-                    if (DualShock4BatteryParser.TryParse(_inputReportBuffer.AsSpan(0, (int)bytesRead), out int percent, out bool charging))
+                    var span = _inputReportBuffer.AsSpan(0, (int)bytesRead);
+                    int percent;
+                    bool charging;
+
+                    if (_currentController?.Model == ControllerModel.DualSense || _currentController?.Model == ControllerModel.DualSenseEdge)
+                    {
+                        if (DualSenseBluetoothAudioProtocol.TryParseInputReport(span, out percent, out charging, out bool jackConnected))
+                        {
+                            if (_currentController != null)
+                            {
+                                _currentController.IsHeadphoneJackInserted = jackConnected;
+                            }
+                            if (percent != CurrentBatteryPercent || charging != IsCharging)
+                            {
+                                CurrentBatteryPercent = percent;
+                                IsCharging = charging;
+                                if (_currentController != null)
+                                {
+                                    _currentController.BatteryPercent = percent;
+                                    _currentController.IsCharging = charging;
+                                }
+                                BatteryReportReceived?.Invoke(this, (percent, charging));
+                            }
+                        }
+                    }
+                    else if (DualShock4BatteryParser.TryParse(span, out percent, out charging))
                     {
                         if (percent != CurrentBatteryPercent || charging != IsCharging)
                         {
@@ -249,11 +274,23 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
             if (!IsOpen || _deviceHandle == null || _deviceHandle.IsInvalid)
                 return false;
 
-            DualShock4BluetoothAudioProtocol.WriteAudioControlReport(
-                _controlReportBuffer,
-                speakerEnabled: true,
-                headphoneVolume: headphoneVolume,
-                speakerVolume: speakerVolume);
+            if (_currentController?.Model == ControllerModel.DualSense || _currentController?.Model == ControllerModel.DualSenseEdge)
+            {
+                bool isHeadset = speakerVolume == 0;
+                byte vol = isHeadset ? headphoneVolume : speakerVolume;
+                DualSenseBluetoothAudioProtocol.WriteBluetoothControlReport(
+                    _controlReportBuffer,
+                    headsetMode: isHeadset,
+                    volume: vol);
+            }
+            else
+            {
+                DualShock4BluetoothAudioProtocol.WriteAudioControlReport(
+                    _controlReportBuffer,
+                    speakerEnabled: true,
+                    headphoneVolume: headphoneVolume,
+                    speakerVolume: speakerVolume);
+            }
 
             return WriteControlDirect();
         }
@@ -266,11 +303,22 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
             if (!IsOpen || _deviceHandle == null || _deviceHandle.IsInvalid)
                 return false;
 
-            DualShock4BluetoothAudioProtocol.WriteAudioControlReport(
-                _controlReportBuffer,
-                speakerEnabled: false,
-                headphoneVolume: 0,
-                speakerVolume: 0);
+            if (_currentController?.Model == ControllerModel.DualSense || _currentController?.Model == ControllerModel.DualSenseEdge)
+            {
+                DualSenseBluetoothAudioProtocol.WriteBluetoothControlReport(
+                    _controlReportBuffer,
+                    headsetMode: false,
+                    volume: 0,
+                    isMuted: true);
+            }
+            else
+            {
+                DualShock4BluetoothAudioProtocol.WriteAudioControlReport(
+                    _controlReportBuffer,
+                    speakerEnabled: false,
+                    headphoneVolume: 0,
+                    speakerVolume: 0);
+            }
 
             return WriteControlDirect();
         }
@@ -280,6 +328,20 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
     {
         if (_deviceHandle == null || _deviceHandle.IsInvalid)
             return false;
+
+        // Drain any pending streaming write on the same file handle before writing control report
+        for (int i = 0; i < BufferCount; i++)
+        {
+            if (_ioPending[i])
+            {
+                uint waitResult = HidNativeMethods.WaitForSingleObject(_writeEvents[i], 40);
+                if (waitResult == HidNativeMethods.WaitObject0)
+                {
+                    HidNativeMethods.GetOverlappedResult(_deviceHandle, _overlappedPtrs[i], out _, false);
+                    _ioPending[i] = false;
+                }
+            }
+        }
 
         HidNativeMethods.ResetEvent(_controlWriteEvent);
         ZeroOverlapped(_controlOverlappedPtr, _controlWriteEvent);
@@ -299,7 +361,7 @@ public sealed class DualShock4HidTransport : IBluetoothAudioTransport
 
             if (error == errorIoPending)
             {
-                uint wait = HidNativeMethods.WaitForSingleObject(_controlWriteEvent, 100);
+                uint wait = HidNativeMethods.WaitForSingleObject(_controlWriteEvent, 150);
                 if (wait == HidNativeMethods.WaitObject0)
                 {
                     return HidNativeMethods.GetOverlappedResult(_deviceHandle, _controlOverlappedPtr, out _, false);

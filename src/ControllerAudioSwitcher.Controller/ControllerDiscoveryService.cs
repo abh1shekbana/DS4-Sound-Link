@@ -9,10 +9,13 @@ namespace ControllerAudioSwitcher.Controller;
 
 public sealed class ControllerDiscoveryService : IControllerDiscoveryService
 {
-    private const int SonyVid = 0x054C;
-    private const int Ds4V1Pid = 0x05C4;
-    private const int Ds4V2Pid = 0x09CC;
-    private const int SonyWaPid = 0x0BA0;
+    public const int SonyVid = 0x054C;
+    public const int Ds4V1Pid = 0x05C4;
+    public const int Ds4V2Pid = 0x09CC;
+    public const int Ds4VariantPid = 0x05C5;
+    public const int SonyWaPid = 0x0BA0;
+    public const int DualSensePid = 0x0CE6;
+    public const int DualSenseEdgePid = 0x0DF2;
 
     public event EventHandler<ControllerInfo>? ControllerConnected;
     public event EventHandler<ControllerInfo>? ControllerDisconnected;
@@ -32,7 +35,7 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
 
     public void StartDiscovery()
     {
-        _diagnosticService?.Info("Starting DualShock 4 controller discovery...");
+        _diagnosticService?.Info("Starting PlayStation controller discovery (DualShock 4 / DualSense / Edge)...");
         RefreshControllers();
         _pollTimer.Change(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
@@ -96,11 +99,24 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
                 else
                 {
                     var existing = _connectedControllers[kvp.Key];
+                    bool stateChanged = false;
+
                     if (kvp.Value.BatteryPercent >= 0 &&
                         (existing.BatteryPercent != kvp.Value.BatteryPercent || existing.IsCharging != kvp.Value.IsCharging))
                     {
                         existing.BatteryPercent = kvp.Value.BatteryPercent;
                         existing.IsCharging = kvp.Value.IsCharging;
+                        stateChanged = true;
+                    }
+
+                    if (existing.IsHeadphoneJackInserted != kvp.Value.IsHeadphoneJackInserted)
+                    {
+                        existing.IsHeadphoneJackInserted = kvp.Value.IsHeadphoneJackInserted;
+                        stateChanged = true;
+                    }
+
+                    if (stateChanged)
+                    {
                         batteryUpdated.Add(existing);
                     }
                 }
@@ -117,7 +133,7 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
 
         foreach (var c in connected)
         {
-            _diagnosticService?.Info($"Controller attached: {c.DisplayName} ({c.ConnectionType}) [Compatible: {c.IsCompatible}, Battery: {(c.BatteryPercent >= 0 ? c.BatteryPercent + "%" : "reading...")}]");
+            _diagnosticService?.Info($"Controller attached: {c.DisplayName} ({c.ConnectionType}) [Model: {c.Model}, Audio: {c.Capabilities.BtAudioStreaming}, Battery: {(c.BatteryPercent >= 0 ? c.BatteryPercent + "%" : "reading...")}]");
             ControllerConnected?.Invoke(this, c);
         }
 
@@ -238,12 +254,49 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
                 return null;
             }
 
-            if (attributes.VendorID != SonyVid)
-                return null;
+            ControllerModel model;
+            string name;
 
-            if (attributes.ProductID != Ds4V1Pid && 
-                attributes.ProductID != Ds4V2Pid && 
-                attributes.ProductID != SonyWaPid)
+            if (attributes.VendorID == SonyVid)
+            {
+                switch (attributes.ProductID)
+                {
+                    case Ds4V1Pid:
+                        model = ControllerModel.DualShock4V1;
+                        name = "Sony DualShock 4 (v1)";
+                        break;
+                    case Ds4V2Pid:
+                        model = ControllerModel.DualShock4V2;
+                        name = "Sony DualShock 4 (v2)";
+                        break;
+                    case Ds4VariantPid:
+                        model = ControllerModel.DualShock4V2;
+                        name = "Sony DualShock 4";
+                        break;
+                    case SonyWaPid:
+                        model = ControllerModel.DualShock4Dongle;
+                        name = "Sony DualShock 4 Wireless Adapter";
+                        break;
+                    case DualSensePid:
+                        model = ControllerModel.DualSense;
+                        name = "Sony DualSense (PS5)";
+                        break;
+                    case DualSenseEdgePid:
+                        model = ControllerModel.DualSenseEdge;
+                        name = "Sony DualSense Edge";
+                        break;
+                    default:
+                        model = ControllerModel.UnknownPlayStation;
+                        name = $"Sony Controller (PID: 0x{attributes.ProductID:X4})";
+                        break;
+                }
+            }
+            else if (attributes.VendorID == 0x0C12 || attributes.VendorID == 0x0F0D || attributes.VendorID == 0x146B)
+            {
+                model = ControllerModel.DualShock4CompatibleClone;
+                name = $"Compatible PlayStation Controller (VID: 0x{attributes.VendorID:X4})";
+            }
+            else
             {
                 return null;
             }
@@ -282,7 +335,7 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
             }
             else if (devicePath.Contains("USB#", StringComparison.OrdinalIgnoreCase) || 
                      devicePath.Contains("USB\\", StringComparison.OrdinalIgnoreCase) ||
-                     (inputReportLength == 64 && outputReportLength == 32 && !devicePath.Contains("00001124", StringComparison.OrdinalIgnoreCase)))
+                     (inputReportLength == 64 && outputReportLength <= 48 && !devicePath.Contains("00001124", StringComparison.OrdinalIgnoreCase)))
             {
                 connectionType = ControllerConnectionType.Usb;
             }
@@ -298,21 +351,15 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
                 connectionType = ControllerConnectionType.Bluetooth;
             }
 
-            string name = attributes.ProductID switch
-            {
-                Ds4V1Pid => "Sony DualShock 4 (v1)",
-                Ds4V2Pid => "Sony DualShock 4 (v2)",
-                SonyWaPid => "Sony DualShock 4 Wireless Adapter",
-                _ => "Sony DualShock 4"
-            };
-
             var info = new ControllerInfo
             {
                 DevicePath = devicePath,
                 DisplayName = name,
                 VendorId = attributes.VendorID,
                 ProductId = attributes.ProductID,
+                Model = model,
                 ConnectionType = connectionType,
+                Capabilities = ControllerCapabilities.Create(model, connectionType),
                 InputReportByteLength = inputReportLength,
                 OutputReportByteLength = outputReportLength
             };
@@ -322,7 +369,7 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
                 ProbeBattery(info);
             }
 
-            _diagnosticService?.Debug($"Identified DualShock 4: {info.DisplayName} ({info.ConnectionType}), InputLen={inputReportLength}, OutputLen={outputReportLength}, Compatible={info.IsCompatible}, Battery={info.BatteryPercent}%");
+            _diagnosticService?.Debug($"Identified controller: {info.DisplayName} ({info.ConnectionType}), Model={info.Model}, InputLen={inputReportLength}, OutputLen={outputReportLength}, AudioCompatible={info.IsCompatible}, Battery={info.BatteryPercent}%");
 
             return info;
         }
@@ -403,11 +450,22 @@ public sealed class ControllerDiscoveryService : IControllerDiscoveryService
 
                 if (success && bytesRead > 0)
                 {
-                    if (DualShock4BatteryParser.TryParse(buffer.AsSpan(0, (int)bytesRead), out int batteryPercent, out bool isCharging))
+                    var span = buffer.AsSpan(0, (int)bytesRead);
+                    if (info.Model == ControllerModel.DualSense || info.Model == ControllerModel.DualSenseEdge)
+                    {
+                        if (DualSenseBluetoothAudioProtocol.TryParseInputReport(span, out int dsBattery, out bool dsCharging, out bool dsJack))
+                        {
+                            info.BatteryPercent = dsBattery;
+                            info.IsCharging = dsCharging;
+                            info.IsHeadphoneJackInserted = dsJack;
+                            _diagnosticService?.Debug($"DualSense telemetry probe for {info.DisplayName}: {dsBattery}% (Charging={dsCharging}, JackConnected={dsJack})");
+                        }
+                    }
+                    else if (DualShock4BatteryParser.TryParse(span, out int batteryPercent, out bool isCharging))
                     {
                         info.BatteryPercent = batteryPercent;
                         info.IsCharging = isCharging;
-                        _diagnosticService?.Debug($"Battery probe for {info.DisplayName}: {batteryPercent}% (Charging={isCharging})");
+                        _diagnosticService?.Debug($"DualShock 4 battery probe for {info.DisplayName}: {batteryPercent}% (Charging={isCharging})");
                     }
                 }
             }

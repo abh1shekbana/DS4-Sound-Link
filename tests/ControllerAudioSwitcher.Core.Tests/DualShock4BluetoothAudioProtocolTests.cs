@@ -19,6 +19,7 @@ public class DualShock4BluetoothAudioProtocolTests
         Assert.AreEqual(0xF3, report[3]); // Validity mask
         Assert.AreEqual(volume, report[21]); // Left headphone
         Assert.AreEqual(volume, report[22]); // Right headphone
+        Assert.AreEqual((byte)0x85, report[25], "Byte 25 must carry the 0x85 audio arming handshake.");
 
         // Verify CRC-32 over prefix 0xA2 + report[0..73]
         uint expectedCrc = DualShock4Crc32.ComputeBluetoothCrc32(report, 0, 74);
@@ -37,10 +38,21 @@ public class DualShock4BluetoothAudioProtocolTests
         Assert.AreEqual(0xF0, report[3]); // Validity mask
         Assert.AreEqual(0, report[21]);
         Assert.AreEqual(0, report[22]);
+        Assert.AreEqual((byte)0x00, report[25], "Byte 25 must be 0x00 when disarmed.");
 
         uint expectedCrc = DualShock4Crc32.ComputeBluetoothCrc32(report, 0, 74);
         uint reportCrc = BinaryPrimitives.ReadUInt32LittleEndian(report.AsSpan(74, 4));
         Assert.AreEqual(expectedCrc, reportCrc);
+    }
+
+    [TestMethod]
+    public void ScaleToHardwareVolume_ScalesAndClampsProperly()
+    {
+        Assert.AreEqual((byte)0, DualShock4BluetoothAudioProtocol.ScaleToHardwareVolume(0));
+        Assert.AreEqual((byte)0x4F, DualShock4BluetoothAudioProtocol.ScaleToHardwareVolume(127));
+        Assert.AreEqual((byte)0x4F, DualShock4BluetoothAudioProtocol.ScaleToHardwareVolume(255)); // Clamped to 0x4F (79)
+        byte mid = DualShock4BluetoothAudioProtocol.ScaleToHardwareVolume(64);
+        Assert.IsTrue(mid >= 39 && mid <= 41);
     }
 
     [TestMethod]

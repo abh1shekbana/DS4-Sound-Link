@@ -30,4 +30,5 @@ public sealed class StreamingStatus
     public DateTime? StreamStartTime { get; set; }
     public int ControllerBatteryPercent { get; set; } = -1;
     public bool IsControllerCharging { get; set; }
+    public AudioOutputRoute ActiveOutputRoute { get; set; } = AudioOutputRoute.Unknown;
 }

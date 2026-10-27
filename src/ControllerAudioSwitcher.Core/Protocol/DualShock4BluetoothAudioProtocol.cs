@@ -24,6 +24,19 @@ public static class DualShock4BluetoothAudioProtocol
     public const byte AudioTargetHeadphoneJack = 0x24; // 3.5 mm jack on bottom of DS4
     public const byte AudioTargetInternalSpeaker = 0x02; // Internal mono speaker
 
+    public const byte AudioArmHandshake = 0x85; // UNK_AUDIO1=5 | UNK_AUDIO2=0x80 (latch audio plane)
+    public const byte AudioDisarmHandshake = 0x00;
+    public const byte MaxHardwareVolume = 0x4F; // 79 in DS4 DAC registers
+
+    /// <summary>
+    /// Scales UI/software volume (0..127) to DS4 hardware DAC register range (0..0x4F / 0..79).
+    /// </summary>
+    public static byte ScaleToHardwareVolume(byte volume0To127)
+    {
+        if (volume0To127 == 0) return 0;
+        return (byte)Math.Clamp((int)Math.Round(volume0To127 * (79.0 / 127.0)), 0, MaxHardwareVolume);
+    }
+
     /// <summary>
     /// Builds the 78-byte Report 0x11 to arm or disarm the audio plane on the DualShock 4.
     /// </summary>
@@ -40,6 +53,9 @@ public static class DualShock4BluetoothAudioProtocol
 
     /// <summary>
     /// Writes the 78-byte Report 0x11 into a preallocated buffer.
+    /// In Headphone mode, headphone volume is applied and speaker volume is strictly muted (0).
+    /// In Speaker mode, speaker volume is applied and headphone volume is strictly muted (0).
+    /// Byte 25 is programmed with the verified 0x85 audio handshake required for the hardware DAC to latch routing.
     /// </summary>
     public static void WriteAudioControlReport(
         Span<byte> report,
@@ -55,14 +71,18 @@ public static class DualShock4BluetoothAudioProtocol
         report[0] = 0x11; // Report ID
         report[1] = (byte)(0xC0 | Math.Min(bluetoothPollRate, (byte)16));
         report[2] = speakerEnabled ? AudioModeSpeaker : AudioModeDisabled;
-        report[3] = speakerEnabled ? (byte)0xF3 : (byte)0xF0; // Validity mask
+        report[3] = (byte)(speakerEnabled ? 0xF3 : 0xF0); // Validity mask: 0xF0 updates all audio volume channels
 
         // Bytes 4-20 are reserved/effects
-        // Volumes (0 to 127)
+        // Volumes (0 to 127, hardware DAC responds up to 0x4F)
         report[21] = speakerEnabled ? headphoneVolume : (byte)0; // Left headphone
         report[22] = speakerEnabled ? headphoneVolume : (byte)0; // Right headphone
-        report[23] = 0; // Mic volume
+        report[23] = 0;                                           // Mic volume
         report[24] = speakerEnabled ? speakerVolume : (byte)0;   // Controller speaker
+
+        // Byte 25: Verified hardware audio handshake (UNK_AUDIO1=5, UNK_AUDIO2=1 => 0x85)
+        // Enables and latches the controller's internal DAC audio routing path
+        report[25] = speakerEnabled ? AudioArmHandshake : AudioDisarmHandshake;
 
         DualShock4Crc32.AppendChecksum(DualShock4Crc32.OutputReportPrefix, report[..AudioControlReportLength]);
     }

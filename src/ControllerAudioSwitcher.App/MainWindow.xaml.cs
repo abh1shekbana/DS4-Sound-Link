@@ -304,14 +304,24 @@ public partial class MainWindow : Window
 
             if (controller.IsCompatible)
             {
-                // [GREEN DOT] DualShock 4 Connected
+                // [GREEN DOT] Compatible Controller Connected
                 DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Vibrant emerald
                 TxtControllerStatus.Text = $"{controller.DisplayName} Connected";
                 TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
-                TxtControllerSubtext.Text = "Bluetooth • Ready for wireless audio";
+
+                if (controller.IsHeadphoneJackInserted.HasValue)
+                {
+                    TxtControllerSubtext.Text = controller.IsHeadphoneJackInserted.Value 
+                        ? "Bluetooth • 3.5 mm Jack Connected" 
+                        : "Bluetooth • Headphones Disconnected";
+                }
+                else
+                {
+                    TxtControllerSubtext.Text = "Bluetooth • Ready for wireless audio";
+                }
                 TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
 
-                TxtSettingsCapability.Text = "Compatible (3.5 mm Jack Supported)";
+                TxtSettingsCapability.Text = $"Compatible ({controller.Model}, Wireless Stream: {controller.Capabilities.BtAudioStreaming})";
                 BtnStartStreaming.IsEnabled = !_streamingController.IsStreaming && !_isOperationPending;
             }
             else
@@ -319,10 +329,10 @@ public partial class MainWindow : Window
                 DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
                 TxtControllerStatus.Text = $"{controller.DisplayName} (Unsupported)";
                 TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                TxtControllerSubtext.Text = "Hardware configuration unsupported";
+                TxtControllerSubtext.Text = "Audio streaming unsupported on this device";
                 TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
 
-                TxtSettingsCapability.Text = "Unsupported configuration";
+                TxtSettingsCapability.Text = $"Unsupported ({controller.Model})";
                 BtnStartStreaming.IsEnabled = false;
             }
         }
@@ -331,13 +341,17 @@ public partial class MainWindow : Window
             DotControllerStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
             TxtControllerStatus.Text = $"{controller.DisplayName} (USB)";
             TxtControllerStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-            TxtControllerSubtext.Text = "Connect via Bluetooth for wireless audio";
+            TxtControllerSubtext.Text = "Wired USB • Connect via Bluetooth for wireless stream";
             TxtControllerSubtext.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
 
             TxtSettingsInterface.Text = "USB (Wired)";
-            TxtSettingsCapability.Text = "USB Connected (Wireless transport inactive)";
+            TxtSettingsCapability.Text = $"USB Connected ({controller.Model}, Windows USB Audio)";
             BtnStartStreaming.IsEnabled = false;
         }
+
+        // Enable/Disable output options based on hardware capability
+        BtnSegmentSpeaker.IsEnabled = controller.Capabilities.InternalSpeakerRouting != ControllerCapabilityState.Unsupported;
+        BtnSegmentHeadphones.IsEnabled = controller.Capabilities.HeadphoneRouting != ControllerCapabilityState.Unsupported;
     }
 
     private void UpdateBatteryUi(int percent, bool isCharging)
@@ -390,6 +404,11 @@ public partial class MainWindow : Window
         if (status.ControllerBatteryPercent >= 0)
         {
             UpdateBatteryUi(status.ControllerBatteryPercent, status.IsControllerCharging);
+        }
+
+        if (status.ActiveOutputRoute == AudioOutputRoute.Headphones || status.ActiveOutputRoute == AudioOutputRoute.InternalSpeaker)
+        {
+            UpdateOutputSelectorVisual(status.ActiveOutputRoute == AudioOutputRoute.Headphones, animate: false);
         }
 
         switch (status.State)
@@ -591,16 +610,20 @@ public partial class MainWindow : Window
 
     private async void OnSegmentSpeakerClicked(object sender, RoutedEventArgs e)
     {
-        if (!_settingsService.CurrentSettings.HeadsetMode) return;
-        UpdateOutputSelectorVisual(false, animate: true);
+        if (!_settingsService.CurrentSettings.HeadsetMode && _streamingController.Status.ActiveOutputRoute == AudioOutputRoute.InternalSpeaker) return;
+        TxtActiveOutputBadge.Text = "Switching Output...";
         await _streamingController.SetOutputDestinationAsync(false);
+        bool isHeadphones = _streamingController.Status.ActiveOutputRoute == AudioOutputRoute.Headphones;
+        UpdateOutputSelectorVisual(isHeadphones, animate: true);
     }
 
     private async void OnSegmentHeadphonesClicked(object sender, RoutedEventArgs e)
     {
-        if (_settingsService.CurrentSettings.HeadsetMode) return;
-        UpdateOutputSelectorVisual(true, animate: true);
+        if (_settingsService.CurrentSettings.HeadsetMode && _streamingController.Status.ActiveOutputRoute == AudioOutputRoute.Headphones) return;
+        TxtActiveOutputBadge.Text = "Switching Output...";
         await _streamingController.SetOutputDestinationAsync(true);
+        bool isHeadphones = _streamingController.Status.ActiveOutputRoute == AudioOutputRoute.Headphones || _settingsService.CurrentSettings.HeadsetMode;
+        UpdateOutputSelectorVisual(isHeadphones, animate: true);
     }
 
     private void OnSegmentButtonKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

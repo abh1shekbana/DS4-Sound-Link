@@ -23,6 +23,7 @@ public sealed class AudioStreamingController : IAudioStreamingController
     private readonly IDiagnosticService _diagnosticService;
 
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
+    private readonly SemaphoreSlim _routeTransitionLock = new(1, 1);
     private readonly object _stateLock = new();
     private readonly StreamingStatus _status = new();
     private CancellationTokenSource? _streamCts;
@@ -303,9 +304,10 @@ public sealed class AudioStreamingController : IAudioStreamingController
             UpdateStatus(s =>
             {
                 s.State = StreamingState.Streaming;
+                s.ActiveOutputRoute = headsetMode ? AudioOutputRoute.Headphones : AudioOutputRoute.InternalSpeaker;
                 s.Message = $"Streaming audio to {(headsetMode ? "AUX / Headphone Jack" : "Internal Speaker")} active.";
             });
-            _diagnosticService.Info($"DualShock 4 audio streaming started successfully (Destination: {(headsetMode ? "AUX / Headphone Jack" : "Internal Speaker")}).");
+            _diagnosticService.Info($"PlayStation controller audio streaming started successfully (Target: {targetController.DisplayName}, Destination: {(headsetMode ? "AUX / Headphone Jack" : "Internal Speaker")}).");
             return true;
         }
         finally
@@ -382,6 +384,7 @@ public sealed class AudioStreamingController : IAudioStreamingController
 
             UpdateStatus(s =>
             {
+                s.ActiveOutputRoute = AudioOutputRoute.Disconnected;
                 s.State = s.ActiveController?.IsCompatible == true 
                     ? StreamingState.ConnectedBluetoothReady 
                     : StreamingState.Disconnected;
@@ -390,13 +393,14 @@ public sealed class AudioStreamingController : IAudioStreamingController
                 s.EstimatedLatencyMs = 0;
             });
 
-            _diagnosticService.Info("DualShock 4 audio streaming stopped successfully.");
+            _diagnosticService.Info("PlayStation controller audio streaming stopped successfully.");
         }
         catch (Exception ex)
         {
             _diagnosticService.Error($"Error in StopStreamingAsync: {ex.Message}", ex);
             UpdateStatus(s =>
             {
+                s.ActiveOutputRoute = AudioOutputRoute.Disconnected;
                 s.State = s.ActiveController?.IsCompatible == true 
                     ? StreamingState.ConnectedBluetoothReady 
                     : StreamingState.Disconnected;
@@ -437,29 +441,99 @@ public sealed class AudioStreamingController : IAudioStreamingController
 
     public async Task SetOutputDestinationAsync(bool headsetMode)
     {
-        _settingsService.CurrentSettings.HeadsetMode = headsetMode;
-        _settingsService.Save();
-
-        _activeHeadsetMode = headsetMode;
-
-        if (IsStreaming && _transport.IsOpen)
+        await _routeTransitionLock.WaitAsync();
+        try
         {
+            var targetController = Status.ActiveController;
+            if (targetController != null)
+            {
+                if (headsetMode && targetController.Capabilities.HeadphoneRouting == ControllerCapabilityState.Unsupported)
+                {
+                    _diagnosticService.Warn($"Cannot route to headphones: {targetController.DisplayName} does not support headphone routing.");
+                    UpdateStatus(s => s.Message = "Headphone routing unsupported on this controller.");
+                    return;
+                }
+                if (!headsetMode && targetController.Capabilities.InternalSpeakerRouting == ControllerCapabilityState.Unsupported)
+                {
+                    _diagnosticService.Warn($"Cannot route to internal speaker: {targetController.DisplayName} does not support internal speaker routing.");
+                    UpdateStatus(s => s.Message = "Internal speaker routing unsupported on this controller.");
+                    return;
+                }
+            }
+
+            if (!IsStreaming || !_transport.IsOpen)
+            {
+                _activeHeadsetMode = headsetMode;
+                _settingsService.CurrentSettings.HeadsetMode = headsetMode;
+                _settingsService.Save();
+                UpdateStatus(s =>
+                {
+                    s.ActiveOutputRoute = headsetMode ? AudioOutputRoute.Headphones : AudioOutputRoute.InternalSpeaker;
+                });
+                return;
+            }
+
             byte volume = _settingsService.CurrentSettings.HeadphoneVolume;
             byte hpVol = headsetMode ? volume : (byte)0;
             byte spkVol = headsetMode ? (byte)0 : volume;
 
+            // 1. Quiesce audio pipeline: Flush opposite-destination intermediate PCM buffers and encoded frame queue
+            // to completely eliminate cross-destination leakage.
+            lock (_pcmLock)
+            {
+                _pendingLeft.Clear();
+                _pendingRight.Clear();
+            }
+            while (_encodedFrameQueue.TryDequeue(out _)) { }
+            _encoder.Reset();
+
+            // 2. Hardware output routing command: Arm the target destination while strictly muting the inactive output
+            bool armSuccess = false;
             await Task.Run(() =>
             {
                 lock (_stateLock)
                 {
                     if (_transport.IsOpen)
                     {
-                        _transport.ArmAudio(hpVol, spkVol);
+                        armSuccess = _transport.ArmAudio(hpVol, spkVol);
                     }
                 }
             });
 
-            _diagnosticService.Info($"Output destination switched live to: {(headsetMode ? "AUX / Headphone Jack (0x24)" : "Internal Speaker (0x02)")}");
+            if (armSuccess)
+            {
+                _activeHeadsetMode = headsetMode;
+                _settingsService.CurrentSettings.HeadsetMode = headsetMode;
+                _settingsService.Save();
+                var confirmedRoute = headsetMode ? AudioOutputRoute.Headphones : AudioOutputRoute.InternalSpeaker;
+
+                UpdateStatus(s =>
+                {
+                    s.ActiveOutputRoute = confirmedRoute;
+                    if (headsetMode && targetController?.Capabilities.JackDetection == ControllerCapabilityState.Supported && targetController.IsHeadphoneJackInserted == false)
+                    {
+                        s.Message = "Headphones active (Jack disconnected - plug in 3.5 mm jack).";
+                    }
+                    else
+                    {
+                        s.Message = $"Streaming audio to {(headsetMode ? "AUX / Headphone Jack" : "Internal Speaker")} active.";
+                    }
+                });
+
+                _diagnosticService.Info($"Output destination switched live successfully to: {(headsetMode ? "AUX / Headphone Jack (0x24)" : "Internal Speaker (0x02)")}");
+            }
+            else
+            {
+                _diagnosticService.Error("Failed to apply hardware output routing report to controller. Retaining previous confirmed route.");
+                UpdateStatus(s =>
+                {
+                    s.Message = "Output switching failed on controller hardware.";
+                });
+            }
+        }
+        finally
+        {
+            _routeTransitionLock.Release();
         }
     }
 
@@ -716,5 +790,6 @@ public sealed class AudioStreamingController : IAudioStreamingController
         _captureService.SamplesAvailable -= OnCaptureSamplesAvailable;
         _captureService.CaptureError -= OnCaptureError;
         _lifecycleLock.Dispose();
+        _routeTransitionLock.Dispose();
     }
 }
